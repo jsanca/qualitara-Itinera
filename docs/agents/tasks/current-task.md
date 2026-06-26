@@ -1,141 +1,123 @@
-# Task 002 — Backend Foundation
+# Task 003C — Persistence Cleanup Before Phase 3
 
 ## Context
 
 Project: Itinera
 
-Phase 1 establishes the backend runtime foundation. This task should create a runnable Kotlin Spring Boot backend connected to PostgreSQL through Flyway migrations.
+Phase 2 implemented the persistence model and repository layer. Deep review found no critical issues, and follow-up repository tests were added in Task 003A.
 
-Do not implement onboarding business logic yet.
+Before marking Phase 2 complete, perform a small cleanup pass to remove documentation ambiguity and capture one schema decision explicitly.
+
+Do not change business behavior.
 
 ## Goal
 
-Create the Spring Boot Kotlin backend scaffold with:
-
-* Gradle build
-* PostgreSQL configuration
-* Flyway migration setup
-* Health endpoint
-* Basic test execution
+Close the remaining Phase 2 review items that should be resolved before Phase 3 begins.
 
 ## Scope
 
-Implement inside `backend/`.
+### 1. ADR Duplicate Cleanup
 
-Expected capabilities:
+Review `docs/adr/`.
 
-* Backend starts locally.
-* Backend connects to PostgreSQL from `docker-compose.yml`.
-* Flyway runs on startup.
-* Health endpoint responds.
-* Tests can run.
-
-## Required Stack
-
-Use:
-
-* Kotlin
-* Spring Boot
-* Gradle Kotlin DSL
-* Flyway
-* PostgreSQL driver
-* Spring JDBC
-* Spring Boot Actuator
-* JUnit 5
-
-Do not use JPA.
-
-## Expected Files
-
-Create or update:
+There appear to be duplicate ADR files using different naming conventions, for example:
 
 ```text
-backend/
-├── build.gradle.kts
-├── settings.gradle.kts
-├── gradlew
-├── gradlew.bat
-├── gradle/
-├── src/main/kotlin/...
-├── src/main/resources/application.yml
-├── src/main/resources/db/migration/V1__initial_backend_foundation.sql
-└── src/test/kotlin/...
+ADR0003.md
+0003-hybrid-relational-jsonb-step-state.md
 ```
 
-## Health Endpoint
+Choose one convention and keep it consistent.
 
-Use Spring Boot Actuator health.
-
-Expected endpoint:
+Preferred convention:
 
 ```text
-GET /actuator/health
+0001-use-spring-boot-flyway-jdbc.md
+0002-backend-owned-static-workflow.md
+0003-hybrid-relational-jsonb-step-state.md
+0004-version-jsonb-payloads-at-application-boundary.md
+0005-keep-postgresql-as-persistence-boundary.md
 ```
 
-Expected response should indicate the app is up.
+Remove or consolidate duplicates.
 
-## Flyway
+Do not lose meaningful ADR content. If duplicate files differ, merge the better content into the canonical file before deleting the duplicate.
 
-Add a minimal first migration that proves Flyway is wired correctly.
+### 2. Document `partner_account` Cascade Decision
 
-Do not create the full onboarding schema yet.
+The schema intentionally does not define `ON DELETE CASCADE` on `partner_account.session_id`, unlike step state and validation attempts.
 
-Example:
+Document this decision explicitly.
 
-```sql
-create table app_schema_version_marker (
-    id integer primary key,
-    description text not null
-);
+Preferred location:
 
-insert into app_schema_version_marker (id, description)
-values (1, 'backend foundation initialized');
+```text
+docs/adr/0005-keep-postgresql-as-persistence-boundary.md
 ```
 
-The real onboarding schema will be added in Phase 2.
+Add a short section explaining:
 
-## Configuration
+* `onboarding_step_state` and `provider_validation_attempt` are session-owned lifecycle records and can cascade.
+* `partner_account` represents a live business account created from onboarding.
+* Deleting an onboarding session should not silently delete a live partner account.
+* Any deletion of partner accounts should be explicit and service-owned.
 
-Configure the backend to connect to local PostgreSQL:
+Do not change the database schema unless the existing implementation contradicts the architecture.
 
-```yaml
-spring:
-  datasource:
-    url: jdbc:postgresql://localhost:5432/itinera
-    username: itinera
-    password: itinera
-  flyway:
-    enabled: true
+### 3. Optional Small Consistency Fix
+
+If trivial and low risk:
+
+* replace duplicate inline `PGobject` creation in repositories with `JsonbPayloadMapper.toPGobject()`.
+
+Only do this if it does not cause refactoring churn.
+
+## Out of Scope
+
+Do not:
+
+* add new workflow services
+* add new REST endpoints
+* change the schema
+* add new migrations
+* implement Provider validation
+* change repository semantics
+* add frontend code
+* introduce logging policy changes
+
+## Validation
+
+Run:
+
+```bash
+cd backend
+./gradlew test
 ```
 
-Use sane defaults. Do not introduce complex environment profiles unless necessary.
+Expected:
 
-## Tests
+```text
+BUILD SUCCESSFUL
+```
 
-Add a minimal test proving the Spring context loads.
+## Documentation
 
-If practical, add a simple health/controller smoke test.
+Create:
 
-Do not add business tests yet.
-
-## Documentation Updates
+```text
+docs/agents/tasks/003c-persistence-cleanup-before-phase-3.md
+docs/agents/reports/003c-persistence-cleanup-before-phase-3.md
+```
 
 Update:
 
-* `backend/README.md`
-* `AI_LOG.md`
-* `docs/agents/reports/002-backend-foundation.md`
-* `docs/FUTURE_FORWARDS.md` if needed
-
-Add this task as:
-
 ```text
-docs/agents/tasks/002-backend-foundation.md
+AI_LOG.md
 ```
 
 ## Report Requirements
 
-The report must follow the standardized report structure:
+Use the standard report structure:
 
 * Summary
 * Deliverables
@@ -145,45 +127,16 @@ The report must follow the standardized report structure:
 * Tradeoffs
 * Follow-ups
 
-The report should describe the engineering capability added:
+The report should describe the capability:
 
-> Backend runtime established.
-
-## Validation Commands
-
-Run and report results:
-
-```bash
-docker compose up -d postgres
-cd backend
-./gradlew test
-./gradlew bootRun
+```text
+Persistence documentation and ADR baseline stabilized.
 ```
-
-Then verify:
-
-```bash
-curl http://localhost:8080/actuator/health
-```
-
-Also confirm Flyway migration ran successfully.
-
-## Constraints
-
-* Do not implement onboarding sessions.
-* Do not implement provider validation.
-* Do not implement REST onboarding APIs.
-* Do not create the full database schema yet.
-* Do not add JPA.
-* Do not add frontend code.
-* Do not add backend/frontend services to Docker Compose yet.
 
 ## Success Criteria
 
-* Backend project exists.
-* Backend starts.
-* Backend connects to PostgreSQL.
-* Flyway runs.
-* Health endpoint works.
-* Tests execute.
-* Documentation and AI log index are updated.
+* ADR files have a single clear naming convention.
+* Duplicate ADR content is resolved.
+* `partner_account` cascade decision is documented.
+* Tests still pass.
+* Phase 2 can be marked complete.

@@ -13,3 +13,7 @@ Detailed task definitions and completion reports are tracked in:
 |------|-------------|-----------|-------------|
 | 001 | Repository Bootstrap | [task](docs/agents/tasks/001-repository-bootstrap.md) | [report](docs/agents/reports/001-repository-bootstrap.md) |
 | 002 | Backend Foundation | [task](docs/agents/tasks/002-backend-foundation.md) | [report](docs/agents/reports/002-backend-foundation.md) |
+| 003 | Persistence Model | [task](docs/agents/tasks/003-persistence-model.md) | [report](docs/agents/reports/003-persistence-model.md) |
+| 003a | Persistence Test Gaps | — | [report](docs/agents/reports/003a-persistence-test-gaps.md) |
+| 003b | Persistence KDoc | — | [report](docs/agents/reports/003b-persistence-kdoc.md) |
+| 003c | Persistence Cleanup Before Phase 3 | [task](docs/agents/tasks/003c-persistence-cleanup-before-phase-3.md) | [report](docs/agents/reports/003c-persistence-cleanup-before-phase-3.md) |

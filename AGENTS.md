@@ -1,48 +1,41 @@
 # AGENTS.md
 
-This file provides guidance to OpenCode when working in this repository.
+Itinera is a resumable partner onboarding platform: Kotlin + React + PostgreSQL vertical slice. Backend owns all workflow state; frontend renders it.
 
-## Project: Itinera
+## Project Status
 
-Itinera is a resumable partner onboarding platform implemented as a Kotlin + React + PostgreSQL vertical slice. Treat it as a real system — prefer correctness, tradeoffs, and testability over feature breadth.
+Phase 0 (Bootstrap), Phase 1 (Backend Foundation), and Phase 2 (Persistence Model) are complete. The frontend directory is empty — implementation of Phases 3–9 is pending.
 
-## Current State
-
-**Phase 0 (Repository Bootstrap)** is complete. The repo has Docker Compose (PostgreSQL 16), a Spring Boot backend skeleton with Flyway, and documentation conventions. The frontend directory exists but contains no code yet. All architecture below represents the design intent — most of it is not yet implemented.
-
-## Command Quick Reference
+## Running
 
 ```bash
-docker compose up -d              # start PostgreSQL 16 on :5432
+docker compose up -d              # PostgreSQL 16 on :5432
+cd backend && ./gradlew bootRun   # backend (needs DB)
 ```
 
+## Testing
+
 ```bash
-cd backend
-./gradlew bootRun                 # start backend (needs PostgreSQL running)
-./gradlew test                    # all tests
+cd backend && ./gradlew test
 ./gradlew test --tests "com.qualitara.itinera.SomeTest"  # single test
 ```
 
 ## JDK Requirement (Critical)
 
-The system JDK must be **21**, not a newer version. Kotlin 1.9.25 used by this project crashes when parsing Java version strings from JDK 25+. The build file declares `JavaLanguageVersion.of(21)` — install JDK 21 if you don't have it (e.g., `brew install openjdk@21`). `gradlew` will fail with `IllegalArgumentException: 25.0.2` if this is wrong.
+System JDK must be **21**. Kotlin 2.1.21 compiles to JVM 21 bytecode; running under JDK 25+ causes `IllegalArgumentException: 25.0.2` at startup. Install with `brew install openjdk@21` if needed.
 
-## Architecture (Design Intent)
+## Architecture
 
 ### Workflow State Machine
-
 ```
 DETAILS → VALIDATION → REVIEW → LIVE
 ```
-
-- Backend owns all workflow state; the frontend renders it.
-- `allowedActions` in the session response drives all frontend transitions — the frontend never invents state changes.
-- Submitting details is idempotent; changing credentials after a valid/partial result resets to VALIDATION.
-- Validation records a new attempt each time; latest result replaces current step state.
-- Go-live is transactional: create-or-reuse partner account + mark live + complete session.
+- `allowedActions` in session response drives all frontend transitions
+- Submitting details is idempotent; changing credentials resets to VALIDATION
+- Validation records a new attempt each time; latest replaces current step state
+- Go-live is transactional: create-or-reuse partner account + mark live + complete session
 
 ### API Contract (Planned)
-
 ```
 POST   /api/onboarding/sessions
 GET    /api/onboarding/sessions/{sessionId}
@@ -50,44 +43,39 @@ PUT    /api/onboarding/sessions/{sessionId}/details
 POST   /api/onboarding/sessions/{sessionId}/validate
 POST   /api/onboarding/sessions/{sessionId}/go-live
 ```
+Session response: `currentStep`, `status`, `details` (apiKeyPresent/apiKeyMasked only — never raw key), `validation`, `allowedActions`.
 
-Session response includes `currentStep`, `status`, `details` (with `apiKeyPresent`/`apiKeyMasked`, never raw key), `validation`, and `allowedActions`.
-
-### Persistence Model (Planned)
-
+### Persistence
 | Table | Purpose |
 |---|---|
 | `onboarding_session` | session lifecycle |
-| `onboarding_step_state` | per-step payload (JSONB); unique on `(session_id, step_key)` |
+| `onboarding_step_state` | per-step JSONB payload; unique on `(session_id, step_key)` |
 | `provider_validation_attempt` | validation audit history |
 | `partner_account` | final live account; unique on `session_id` |
 
-Use `NamedParameterJdbcTemplate` — not JPA. Migrations live in `backend/src/main/resources/db/migration/` (Flyway `V*.sql`). Step payloads are typed Kotlin DTOs (`DetailsPayload`, `ValidationPayload`, `ReviewPayload`).
+Use `NamedParameterJdbcTemplate` — not JPA. Migrations in `backend/src/main/resources/db/migration/` (Flyway `V*.sql`).
 
 ### Provider Integration
-
 ```kotlin
 interface ProviderValidationPort {
     fun validate(request: ProviderValidationRequest): ProviderValidationResult
 }
 ```
-
-Outcomes: `VALID`, `PARTIAL`, `INVALID`, `UNAVAILABLE`, `TIMEOUT`. The fake client uses deterministic trigger values on `accountId`.
+Outcomes: `VALID`, `PARTIAL`, `INVALID`, `UNAVAILABLE`, `TIMEOUT`. Fake client uses deterministic trigger values on `accountId`.
 
 ## Conventions
 
-- **Report every completed task**: write `docs/agents/reports/<NNN>-<name>.md` and an entry in `AI_LOG.md`. Reports explain *why*, not just *what*.
-- **Never silently expand scope**: document out-of-scope items in `docs/FUTURE_FORWARDS.md` or an ADR.
-- **When uncertain, prefer the simplest implementation that preserves the architecture.**
-- **API keys are never returned in responses** — only `apiKeyPresent` and `apiKeyMasked`.
+- **Report completed tasks**: write `docs/agents/reports/<NNN>-<name>.md` + entry in `AI_LOG.md`
+- **Never silently expand scope**: document out-of-scope items in `docs/FUTURE_FORWARDS.md` or an ADR
+- **API keys never returned** — only `apiKeyPresent` and `apiKeyMasked`
+- When uncertain, prefer the simplest implementation that preserves the architecture
 
 ## Non-Goals
 
 Do not implement: authentication/login, real third-party Provider integration, dynamic form engine, Kubernetes/CI/production infra, multi-stage Docker builds, visual polish beyond a clear usable wizard.
 
 ## Key Docs
-
 - `README.md`, `docs/ARCHITECTURE.md`, `docs/PLAN.md`
 - `docs/FUTURE_FORWARDS.md` — deferred work register
 - `docs/adr/` — architecture decision records
-- `AI_LOG.md` — index of tasks and reports
+- `AI_LOG.md` — task/report index

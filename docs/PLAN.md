@@ -41,7 +41,7 @@ Success criteria:
 * Flyway migrations run.
 * Tests can execute.
 
-## Phase 2 — Persistence Model
+## Phase 2 — Persistence Model [DOME]
 
 Deliverables:
 
