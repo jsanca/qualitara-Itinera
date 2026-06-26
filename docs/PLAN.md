@@ -25,7 +25,7 @@ Success criteria:
 * Repo structure is clear.
 * Agents understand project goals and constraints.
 
-## Phase 1 — Backend Foundation
+## Phase 1 — Backend Foundation (DONE)
 
 Deliverables:
 

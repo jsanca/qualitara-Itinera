@@ -12,3 +12,4 @@ Detailed task definitions and completion reports are tracked in:
 | Task | Description | Task File | Report File |
 |------|-------------|-----------|-------------|
 | 001 | Repository Bootstrap | [task](docs/agents/tasks/001-repository-bootstrap.md) | [report](docs/agents/reports/001-repository-bootstrap.md) |
+| 002 | Backend Foundation | [task](docs/agents/tasks/002-backend-foundation.md) | [report](docs/agents/reports/002-backend-foundation.md) |

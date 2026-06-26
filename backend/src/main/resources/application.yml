@@ -1,0 +1,15 @@
+spring:
+  application:
+    name: itinera
+  datasource:
+    url: jdbc:postgresql://localhost:5432/itinera
+    username: itinera
+    password: itinera
+  flyway:
+    enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

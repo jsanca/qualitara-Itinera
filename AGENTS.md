@@ -1,91 +1,93 @@
 # AGENTS.md
 
+This file provides guidance to OpenCode when working in this repository.
+
 ## Project: Itinera
 
-Itinera is a resumable partner onboarding platform implemented as a production-quality vertical slice.
+Itinera is a resumable partner onboarding platform implemented as a Kotlin + React + PostgreSQL vertical slice. Treat it as a real system — prefer correctness, tradeoffs, and testability over feature breadth.
 
-Although this repository is being built under a constrained evaluation window, treat it as a real system. Prefer correctness, explicit tradeoffs, testability, and maintainability over feature breadth.
+## Current State
 
-## Product Goal
+**Phase 0 (Repository Bootstrap)** is complete. The repo has Docker Compose (PostgreSQL 16), a Spring Boot backend skeleton with Flyway, and documentation conventions. The frontend directory exists but contains no code yet. All architecture below represents the design intent — most of it is not yet implemented.
 
-A partner company can self-onboard by:
+## Command Quick Reference
 
-1. Entering company and Provider credentials.
-2. Validating the Provider integration.
-3. Reviewing discovered Provider items and going live.
+```bash
+docker compose up -d              # start PostgreSQL 16 on :5432
+```
 
-The flow must be resumable. The backend is the source of truth for session state, current step, validation result, and allowed actions.
+```bash
+cd backend
+./gradlew bootRun                 # start backend (needs PostgreSQL running)
+./gradlew test                    # all tests
+./gradlew test --tests "com.qualitara.itinera.SomeTest"  # single test
+```
 
-## Core Engineering Principles
+## JDK Requirement (Critical)
 
-* Backend owns workflow state.
-* Frontend renders backend state; it does not invent transitions.
-* Keep the business flow fixed for this slice, but keep the code extensible.
-* Use PostgreSQL + Flyway migrations.
-* Persist step state using a hybrid relational + JSONB model.
-* Validate JSONB payloads through typed Kotlin DTOs and application-level validation.
-* Provider integration must sit behind a port.
-* Use an in-process fake Provider for the MVP.
-* Go-live must be idempotent and transactional.
-* Tests should focus on the meaningful parts: state transitions, validation outcomes, idempotency, and persistence.
+The system JDK must be **21**, not a newer version. Kotlin 1.9.25 used by this project crashes when parsing Java version strings from JDK 25+. The build file declares `JavaLanguageVersion.of(21)` — install JDK 21 if you don't have it (e.g., `brew install openjdk@21`). `gradlew` will fail with `IllegalArgumentException: 25.0.2` if this is wrong.
 
-## Explicit Non-Goals
+## Architecture (Design Intent)
 
-Do not implement:
+### Workflow State Machine
 
-* Authentication/login.
-* Real third-party Provider integration.
-* Dynamic form engine.
-* Kubernetes, CI, production infra, or multi-stage Docker builds.
-* Visual polish beyond a clear usable wizard.
-* AI crawling or advanced automation.
+```
+DETAILS → VALIDATION → REVIEW → LIVE
+```
 
-## Preferred Stack
+- Backend owns all workflow state; the frontend renders it.
+- `allowedActions` in the session response drives all frontend transitions — the frontend never invents state changes.
+- Submitting details is idempotent; changing credentials after a valid/partial result resets to VALIDATION.
+- Validation records a new attempt each time; latest result replaces current step state.
+- Go-live is transactional: create-or-reuse partner account + mark live + complete session.
 
-Backend:
+### API Contract (Planned)
 
-* Kotlin
-* Spring Boot
-* PostgreSQL
-* Flyway
-* NamedParameterJdbcTemplate
-* Jackson
-* JUnit
+```
+POST   /api/onboarding/sessions
+GET    /api/onboarding/sessions/{sessionId}
+PUT    /api/onboarding/sessions/{sessionId}/details
+POST   /api/onboarding/sessions/{sessionId}/validate
+POST   /api/onboarding/sessions/{sessionId}/go-live
+```
 
-Frontend:
+Session response includes `currentStep`, `status`, `details` (with `apiKeyPresent`/`apiKeyMasked`, never raw key), `validation`, and `allowedActions`.
 
-* React
-* TypeScript
-* Simple component-local or lightweight state management
-* Backend DTO-aligned types
+### Persistence Model (Planned)
 
-## Documentation Expectations
+| Table | Purpose |
+|---|---|
+| `onboarding_session` | session lifecycle |
+| `onboarding_step_state` | per-step payload (JSONB); unique on `(session_id, step_key)` |
+| `provider_validation_attempt` | validation audit history |
+| `partner_account` | final live account; unique on `session_id` |
 
-Keep these updated:
+Use `NamedParameterJdbcTemplate` — not JPA. Migrations live in `backend/src/main/resources/db/migration/` (Flyway `V*.sql`). Step payloads are typed Kotlin DTOs (`DetailsPayload`, `ValidationPayload`, `ReviewPayload`).
 
-* `README.md`
-* `ARCHITECTURE.md`
-* `AI_LOG.md`
-* `docs/adr/`
-* `docs/FUTURE_FORWARDS.md`
-* `docs/agents/tasks/`
-* `docs/agents/reports/`
+### Provider Integration
 
-Every agent task should end with a report describing:
+```kotlin
+interface ProviderValidationPort {
+    fun validate(request: ProviderValidationRequest): ProviderValidationResult
+}
+```
 
-* What changed.
-* Why it changed.
-* Tests run.
-* Problems found.
-* Any assumptions made.
-* Anything that needs human review.
-* The report should be write into docs/agents/reports/ referring to the task built
+Outcomes: `VALID`, `PARTIAL`, `INVALID`, `UNAVAILABLE`, `TIMEOUT`. The fake client uses deterministic trigger values on `accountId`.
 
-## AI Work Rules
+## Conventions
 
-AI may generate code, but humans own the design.
+- **Report every completed task**: write `docs/agents/reports/<NNN>-<name>.md` and an entry in `AI_LOG.md`. Reports explain *why*, not just *what*.
+- **Never silently expand scope**: document out-of-scope items in `docs/FUTURE_FORWARDS.md` or an ADR.
+- **When uncertain, prefer the simplest implementation that preserves the architecture.**
+- **API keys are never returned in responses** — only `apiKeyPresent` and `apiKeyMasked`.
 
-Agents must not silently expand scope. If something is outside the current task, document it as a recommendation or future-forward instead of implementing it.
+## Non-Goals
 
-When uncertain, prefer the simplest implementation that preserves the architecture.
+Do not implement: authentication/login, real third-party Provider integration, dynamic form engine, Kubernetes/CI/production infra, multi-stage Docker builds, visual polish beyond a clear usable wizard.
 
+## Key Docs
+
+- `README.md`, `docs/ARCHITECTURE.md`, `docs/PLAN.md`
+- `docs/FUTURE_FORWARDS.md` — deferred work register
+- `docs/adr/` — architecture decision records
+- `AI_LOG.md` — index of tasks and reports
