@@ -6,7 +6,7 @@ Build a correct, resumable, idempotent onboarding vertical slice using Kotlin, R
 
 The project should demonstrate senior engineering judgment under a constrained delivery window.
 
-## Phase 0 — Repository Bootstrap
+## Phase 0 — Repository Bootstrap (DONE)
 
 Deliverables:
 
