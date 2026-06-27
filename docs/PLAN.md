@@ -16,9 +16,9 @@ Build a correct, resumable, idempotent onboarding vertical slice with Kotlin, Re
 | 5 | Transactional go-live | Complete | `007` |
 | 6 | REST API | Complete | `005b`, `008` |
 | 7 | Frontend wizard | Complete | `005a`, `008a`, `009` |
-| 8 | Flow verification | Complete | backend tests and `009a` |
+| 8 | Flow verification | Backend complete; one UI gap recorded | backend tests, `009a`, `012` |
 | 9 | Docker runtime | Complete | `010` |
-| 10 | Documentation finalization | Complete | `011` |
+| 10 | Documentation finalization | Complete | `011`, `012` |
 
 ## Implemented Scope
 
@@ -27,7 +27,7 @@ Build a correct, resumable, idempotent onboarding vertical slice with Kotlin, Re
 - Deterministic fake Provider behind a port, with audit history and retryable outcomes.
 - Transactional, idempotent go-live.
 - Five session-oriented REST endpoints and uniform error responses.
-- React wizard driven by API state, with session resume through `localStorage`.
+- React wizard driven by API state for its exposed actions, with session resume through `localStorage`.
 - Docker Compose runtime for database, backend, and frontend.
 - Domain, repository, Provider, go-live, API, and end-to-end backend coverage.
 

@@ -141,6 +141,8 @@ This design avoids plaintext credential storage in the take-home slice. A real p
 
 Vite proxies `/api` to the backend in development. The Docker frontend uses nginx for static files, SPA fallback, and the same `/api` reverse proxy.
 
+The backend policy can return `EDIT_DETAILS` from Validation or Review, but the submitted minimal UI currently exposes details editing only when `currentStep = DETAILS` (for example, after `INVALID`). Transient states expose retry but no navigation back to details. This known presentation gap does not change the backend state machine and is tracked as deferred frontend work.
+
 ## Error Model
 
 Expected client errors use:

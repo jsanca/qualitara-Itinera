@@ -1,6 +1,6 @@
 # Future Forwards
 
-The submitted vertical slice is complete. These items are intentionally deferred so the current implementation stays focused and inspectable.
+The submitted vertical slice is complete. These prospective product, architecture, testing, and operations investments are outside the delivered scope. Current implementation status is documented separately in [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md).
 
 ## Security and Product Boundary
 

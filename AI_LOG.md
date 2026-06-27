@@ -28,3 +28,5 @@ Task definitions live in [`docs/agents/tasks/`](docs/agents/tasks/) and completi
 | 009a | Backend End-to-End Flow Tests | — | [report](docs/agents/reports/009a-backend-e2e-flow-tests.md) |
 | 010 | Docker Full-Stack Runtime | [task](docs/agents/tasks/010-docker-full-stack-runtime.md) | [report](docs/agents/reports/010-docker-full-stack-runtime.md) |
 | 011 | Documentation Finalization | [task](docs/agents/tasks/current-task2.md) | [report](docs/agents/reports/011-documentation-finalization.md) |
+| 012 | Final Evaluator Smoke Test and README Review | — | [report](docs/agents/reports/012-final-evaluator-smoke-test.md) |
+| 013 | Final Delivery Review and Project Closure | — | [report](docs/agents/reports/013-project-closure.md) |

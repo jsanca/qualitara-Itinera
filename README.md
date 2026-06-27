@@ -17,6 +17,8 @@ The repository contains the complete development flow:
 
 Authentication, a real Provider HTTP client, and production infrastructure are intentionally outside this slice.
 
+Delivery was managed against a fixed engineering time budget. The project favors correctness, architecture, resumability, idempotency, documentation, and disciplined scope control over exhaustive feature completeness.
+
 ## Tech Stack
 
 - **Backend:** Kotlin 2.1.21, Spring Boot 3.5, Gradle, Spring JDBC (`NamedParameterJdbcTemplate`)
@@ -108,7 +110,23 @@ Enter one of these exact values as `accountId`; the API key can be any non-blank
 
 Any other account ID returns `INVALID`. Trigger matching is case-sensitive.
 
-The raw API key is accepted when details are submitted and must be entered again for each validation attempt. It is held only for the active request and is never persisted or returned. The backend stores a masked display value and a SHA-256 credential fingerprint so it can detect credential changes without retaining the secret.
+The raw API key is accepted when details are submitted and must be entered again for each validation attempt. The backend holds it only for the active request and never persists or returns it. The frontend uses a password input; it may retain the input value for an immediate transient retry, but it is not displayed as page text and is cleared by reload or step unmount. The backend stores a masked display value and a SHA-256 credential fingerprint so it can detect credential changes without retaining the secret.
+
+## Manual Evaluation
+
+After opening [http://localhost:3000](http://localhost:3000), submit details, enter the API key again on Validation, and use these checks:
+
+| Scenario | What to verify |
+|---|---|
+| `valid` | Review shows Primary and Secondary Feed; go-live reaches “Onboarding Complete”. |
+| `partial` | Review shows Primary Feed and two warnings; go-live remains enabled. |
+| `invalid` | The wizard returns to Details with the rejection reason and no go-live action. |
+| `unavailable` | Validation shows the temporary-unavailable message and `Retry Validation`. |
+| `timeout` | Validation shows the timeout message and `Retry Validation`; reload resumes that state. |
+
+Reload at any step to verify backend resume. After details submission, only the masked API-key summary should be rendered; the raw key and credential fingerprint must never appear as page text.
+
+The current delivery status, including the small deferred `EDIT_DETAILS` UI integration gap identified during acceptance testing, is recorded in [Known Limitations](docs/KNOWN_LIMITATIONS.md).
 
 ## Workflow
 
@@ -149,6 +167,8 @@ See [Architecture](docs/ARCHITECTURE.md), [API Contract](docs/API_CONTRACT.md), 
 ## Deferred Work
 
 Authentication and authorization, a real Provider HTTP client, encrypted credential-vault integration, dynamic workflow definitions, Testcontainers, frontend tests, generated API types, CI, and production hardening are tracked in [Future Forwards](docs/FUTURE_FORWARDS.md).
+
+Current delivered limitations are documented separately in [Known Limitations](docs/KNOWN_LIMITATIONS.md), so they are not mixed with prospective product and infrastructure investments.
 
 ## With Another Day
 
