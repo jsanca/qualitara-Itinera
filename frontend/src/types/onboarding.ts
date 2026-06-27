@@ -55,3 +55,8 @@ export interface SubmitDetailsRequest {
   accountId: string
   apiKey: string
 }
+
+export interface ApiError {
+  code: string
+  message: string
+}

@@ -1,47 +1,72 @@
 # Itinera Onboarding API Contract
 
-## Status and Scope
+## Scope
 
-This document defines the planned HTTP/JSON contract shared by the Itinera backend and frontend. It is a design contract for the take-home onboarding workflow; the endpoints are not implemented yet.
+This is the implemented HTTP/JSON contract between the React wizard and Spring Boot backend. The backend is authoritative: the frontend renders `currentStep`, `validationStatus`, and `allowedActions` and never infers transitions locally.
 
-The API does not define authentication, a real Provider integration, or endpoints outside the onboarding session workflow.
-
-## Contract Principles
-
-- The backend is the source of truth for workflow state and transitions.
-- The frontend renders `currentStep`, `validationStatus`, and `allowedActions`; it does not infer transitions locally.
-- Every successful mutation returns the full, authoritative session response.
-- A Provider API key is accepted when details are submitted but is never returned in a response.
-- Provider validation outcomes are workflow results, not HTTP errors. `INVALID`, `UNAVAILABLE`, and `TIMEOUT` therefore return a successful session response.
-- JSON requests and responses use `Content-Type: application/json`.
+All successful endpoints return the full session representation. JSON requests use `Content-Type: application/json`.
 
 ## Endpoints
 
-| Method | Path | Purpose | Success |
+| Method | Path | Request | Success |
 |---|---|---|---|
-| `POST` | `/api/onboarding/sessions` | Create a new onboarding session | `201 Created` |
-| `GET` | `/api/onboarding/sessions/{sessionId}` | Read or resume a session | `200 OK` |
-| `PUT` | `/api/onboarding/sessions/{sessionId}/details` | Submit or replace partner details | `200 OK` |
-| `POST` | `/api/onboarding/sessions/{sessionId}/validation` | Start or retry Provider validation | `200 OK` |
-| `POST` | `/api/onboarding/sessions/{sessionId}/go-live` | Complete onboarding and make the partner live | `200 OK` |
+| `POST` | `/api/onboarding/sessions` | no body | `201 Created` |
+| `GET` | `/api/onboarding/sessions/{sessionId}` | no body | `200 OK` |
+| `PUT` | `/api/onboarding/sessions/{sessionId}/details` | details JSON | `200 OK` |
+| `POST` | `/api/onboarding/sessions/{sessionId}/validation` | API-key JSON | `200 OK` |
+| `POST` | `/api/onboarding/sessions/{sessionId}/go-live` | no body | `200 OK` |
 
-`sessionId` is a UUID. A successful create response should also set `Location: /api/onboarding/sessions/{sessionId}`.
+`sessionId` is a UUID. Create also returns `Location: /api/onboarding/sessions/{sessionId}`.
 
-## Session Response
+## Full Session Response
 
-All successful endpoints return the same session representation. Fields are not conditionally omitted; unavailable details are represented by `null`, and lists are represented by empty arrays.
+```json
+{
+  "sessionId": "7d648f95-3a6f-4f65-9c65-b31d62439ee2",
+  "currentStep": "REVIEW",
+  "sessionStatus": "DRAFT",
+  "validationStatus": "PARTIAL",
+  "details": {
+    "companyName": "Acme Logistics",
+    "accountId": "partial",
+    "apiKeyPresent": true,
+    "apiKeyMasked": "********alue"
+  },
+  "validation": {
+    "status": "PARTIAL",
+    "items": [
+      {
+        "externalId": "feed-001",
+        "name": "Primary Feed",
+        "status": "active"
+      }
+    ],
+    "warnings": [
+      "Secondary Feed is paused",
+      "Rate limit at 80% capacity"
+    ],
+    "reason": null
+  },
+  "allowedActions": [
+    "EDIT_DETAILS",
+    "GO_LIVE"
+  ]
+}
+```
 
 | Field | Type | Meaning |
 |---|---|---|
 | `sessionId` | UUID string | Stable onboarding session identifier. |
 | `currentStep` | enum | `DETAILS`, `VALIDATION`, `REVIEW`, or `COMPLETE`. |
-| `sessionStatus` | enum | `DRAFT` while onboarding is active; `LIVE` after go-live. |
+| `sessionStatus` | enum | `DRAFT` or `LIVE`. |
 | `validationStatus` | enum | Current validation lifecycle status. |
-| `details` | object or `null` | Safe details summary; never contains the raw API key. |
-| `validation` | object | Latest validation summary. Its `status` equals `validationStatus`. |
-| `allowedActions` | enum array | Complete set of transitions the backend currently permits. |
+| `details` | object or `null` | Safe details projection; never contains the raw API key or fingerprint. |
+| `validation` | object | Latest validation summary. `validation.status` equals `validationStatus`. |
+| `allowedActions` | enum array | Complete set of actions currently permitted by backend policy. |
 
-Allowed action values are:
+Lists are always arrays. Missing details are `null`. `reason` and `apiKeyMasked` may be `null`.
+
+Allowed action values:
 
 - `SUBMIT_DETAILS`
 - `EDIT_DETAILS`
@@ -50,56 +75,22 @@ Allowed action values are:
 - `GO_TO_REVIEW`
 - `GO_LIVE`
 
-The frontend must only offer or invoke actions present in `allowedActions`. An empty array means the workflow has no further onboarding action.
+The frontend must not invoke an action absent from `allowedActions`.
 
-### Details Summary
-
-```json
-{
-  "companyName": "Acme Logistics",
-  "accountId": "acct-12345",
-  "apiKeyPresent": true,
-  "apiKeyMasked": "********wxyz"
-}
-```
-
-`apiKeyMasked` is optional and may be `null`. It is display-only and must not contain enough information to reconstruct the credential. `apiKeyPresent` is the authoritative indication that a credential is stored.
-
-### Validation Summary
-
-```json
-{
-  "status": "PARTIAL",
-  "items": [
-    {
-      "externalId": "feed-42",
-      "name": "Primary shipment feed",
-      "status": "AVAILABLE"
-    }
-  ],
-  "warnings": [
-    "One optional feed is unavailable."
-  ],
-  "reason": null
-}
-```
-
-`items` and `warnings` are always arrays. `reason` is optional and may be `null`; it supplies a safe, user-facing explanation when one is available.
-
-Validation status values are:
+Validation status values:
 
 | Status | Meaning |
 |---|---|
-| `NOT_STARTED` | No validation attempt has started. |
-| `PENDING` | A validation attempt is in progress. |
-| `VALID` | Credentials and required Provider data are valid. |
-| `PARTIAL` | Validation succeeded with warnings or partial Provider data. |
-| `INVALID` | The Provider rejected the credentials or required data. |
-| `UNAVAILABLE` | The Provider is temporarily unavailable; retry is allowed. |
-| `TIMEOUT` | The Provider call timed out; retry is allowed. |
-| `STALE` | Credentials changed, so an earlier result can no longer be trusted. |
+| `NOT_STARTED` | No attempt has started. |
+| `PENDING` | An attempt is in progress inside the validation lifecycle. |
+| `VALID` | Provider accepted the credentials and required data. |
+| `PARTIAL` | Provider accepted them with warnings or partial data. |
+| `INVALID` | Provider rejected the credentials/account. |
+| `UNAVAILABLE` | Provider is temporarily unavailable; retry is allowed. |
+| `TIMEOUT` | Provider call timed out; retry is allowed. |
+| `STALE` | Credentials changed and the previous outcome is no longer trusted. |
 
-`STALE`, `NOT_STARTED`, and `PENDING` are workflow lifecycle states. They are not Provider outcomes.
+`NOT_STARTED`, `PENDING`, and `STALE` are workflow states rather than Provider outcomes. With the current synchronous fake, the validation mutation normally returns a final outcome rather than `PENDING`.
 
 ## Create Session
 
@@ -107,9 +98,9 @@ Validation status values are:
 POST /api/onboarding/sessions
 ```
 
-The request has no body. The backend creates a new draft session at the initial details step.
+No request body.
 
-### Response — `201 Created`
+### `201 Created`
 
 ```json
 {
@@ -124,24 +115,23 @@ The request has no body. The backend creates a new draft session at the initial 
     "warnings": [],
     "reason": null
   },
-  "allowedActions": [
-    "SUBMIT_DETAILS"
-  ]
+  "allowedActions": ["SUBMIT_DETAILS"]
 }
 ```
 
-## Get Session
+## Get or Resume Session
 
 ```http
 GET /api/onboarding/sessions/{sessionId}
 ```
 
-Returns `200 OK` with the same full session response shape as create and every mutation. The frontend uses this endpoint to resume a saved session after reload; the returned state supersedes any locally cached workflow state.
+Returns `200 OK` with the full session shape. This is the resume endpoint; its result supersedes locally cached workflow state.
 
 ## Submit Details
 
 ```http
 PUT /api/onboarding/sessions/{sessionId}/details
+Content-Type: application/json
 ```
 
 ### Request
@@ -149,18 +139,18 @@ PUT /api/onboarding/sessions/{sessionId}/details
 ```json
 {
   "companyName": "Acme Logistics",
-  "accountId": "acct-12345",
+  "accountId": "valid",
   "apiKey": "provider-secret-value"
 }
 ```
 
-All three fields are required. Payload versioning belongs to the backend persistence boundary and is not supplied by the frontend.
+All fields are required and must be non-blank.
 
-The API key is write-only: it is accepted in this request and must never appear in a response, error, or log. The response replaces it with `apiKeyPresent` and, optionally, `apiKeyMasked`.
+The raw API key is used to compute a credential fingerprint, then discarded. Stored details contain `apiKeyPresent`, a masked display value, and the fingerprint; responses expose only the first two. The raw API key is never persisted, logged, or returned.
 
-Submitting the same details is safe to repeat and replaces the stored details state. If `accountId` or `apiKey` changes after a prior validation, the backend sets validation to `STALE`, returns to `VALIDATION`, and requires a new validation before go-live. The frontend follows the returned state rather than predicting this transition.
+Repeating identical details is safe. If `accountId` or `apiKey` changes after prior validation, the response has `currentStep = VALIDATION` and `validationStatus = STALE`.
 
-### Response — `200 OK`
+### Example `200 OK`
 
 ```json
 {
@@ -170,7 +160,7 @@ Submitting the same details is safe to repeat and replaces the stored details st
   "validationStatus": "NOT_STARTED",
   "details": {
     "companyName": "Acme Logistics",
-    "accountId": "acct-12345",
+    "accountId": "valid",
     "apiKeyPresent": true,
     "apiKeyMasked": "********alue"
   },
@@ -180,17 +170,15 @@ Submitting the same details is safe to repeat and replaces the stored details st
     "warnings": [],
     "reason": null
   },
-  "allowedActions": [
-    "EDIT_DETAILS",
-    "START_VALIDATION"
-  ]
+  "allowedActions": ["EDIT_DETAILS", "START_VALIDATION"]
 }
 ```
 
-## Validate Integration
+## Trigger or Retry Validation
 
 ```http
 POST /api/onboarding/sessions/{sessionId}/validation
+Content-Type: application/json
 ```
 
 ### Request
@@ -201,48 +189,35 @@ POST /api/onboarding/sessions/{sessionId}/validation
 }
 ```
 
-The `apiKey` is write-only: it is used to call the Provider and must never appear in a response, error, or log. The backend does not persistently store the raw key; a SHA-256 fingerprint is stored in the audit record only.
+`apiKey` is required and non-blank. It must be supplied again because Itinera does not persist the raw key from details submission. The service uses it only for this Provider call and stores a fingerprint in the audit attempt.
 
-This endpoint starts an initial validation or retries a retryable result. It will eventually call the Provider behind the backend's validation port; this contract does not define Provider behavior or its implementation.
+The response is the full session with one of `VALID`, `PARTIAL`, `INVALID`, `UNAVAILABLE`, or `TIMEOUT`. These are expected workflow outcomes and return `200 OK`, including transient or rejected results.
 
-The returned full session reflects one of the Provider outcomes: `VALID`, `PARTIAL`, `INVALID`, `UNAVAILABLE`, or `TIMEOUT`. A `PENDING` session representation may be observed while an attempt is in progress. Validation attempts must not expose the submitted API key.
+The in-process fake selects the outcome using the stored `accountId`: `valid`, `partial`, `invalid`, `unavailable`, or `timeout`; any other value is invalid. This contract does not expose or require a particular future real-Provider transport.
 
-### Example Response — `200 OK`
+### Example `200 OK` — unavailable
 
 ```json
 {
   "sessionId": "7d648f95-3a6f-4f65-9c65-b31d62439ee2",
-  "currentStep": "REVIEW",
+  "currentStep": "VALIDATION",
   "sessionStatus": "DRAFT",
-  "validationStatus": "PARTIAL",
+  "validationStatus": "UNAVAILABLE",
   "details": {
     "companyName": "Acme Logistics",
-    "accountId": "acct-12345",
+    "accountId": "unavailable",
     "apiKeyPresent": true,
     "apiKeyMasked": "********alue"
   },
   "validation": {
-    "status": "PARTIAL",
-    "items": [
-      {
-        "externalId": "feed-42",
-        "name": "Primary shipment feed",
-        "status": "AVAILABLE"
-      }
-    ],
-    "warnings": [
-      "One optional feed is unavailable."
-    ],
+    "status": "UNAVAILABLE",
+    "items": [],
+    "warnings": [],
     "reason": null
   },
-  "allowedActions": [
-    "EDIT_DETAILS",
-    "GO_LIVE"
-  ]
+  "allowedActions": ["EDIT_DETAILS", "RETRY_VALIDATION"]
 }
 ```
-
-`INVALID`, `UNAVAILABLE`, and `TIMEOUT` also return `200 OK` with the corresponding `validationStatus`, validation summary, current step, and backend-computed recovery actions.
 
 ## Go Live
 
@@ -250,62 +225,64 @@ The returned full session reflects one of the Provider outcomes: `VALID`, `PARTI
 POST /api/onboarding/sessions/{sessionId}/go-live
 ```
 
-The request has no body. Go-live is permitted only from `REVIEW` when the latest validation status is `VALID` or `PARTIAL`.
+No request body. Go-live is allowed only from `REVIEW` with latest validation `VALID` or `PARTIAL`. Repeating the call after successful completion is idempotent.
 
-### Response — `200 OK`
+### `200 OK`
 
 ```json
 {
   "sessionId": "7d648f95-3a6f-4f65-9c65-b31d62439ee2",
   "currentStep": "COMPLETE",
   "sessionStatus": "LIVE",
-  "validationStatus": "PARTIAL",
+  "validationStatus": "VALID",
   "details": {
     "companyName": "Acme Logistics",
-    "accountId": "acct-12345",
+    "accountId": "valid",
     "apiKeyPresent": true,
     "apiKeyMasked": "********alue"
   },
   "validation": {
-    "status": "PARTIAL",
+    "status": "VALID",
     "items": [
       {
-        "externalId": "feed-42",
-        "name": "Primary shipment feed",
-        "status": "AVAILABLE"
+        "externalId": "feed-001",
+        "name": "Primary Feed",
+        "status": "active"
+      },
+      {
+        "externalId": "feed-002",
+        "name": "Secondary Feed",
+        "status": "active"
       }
     ],
-    "warnings": [
-      "One optional feed is unavailable."
-    ],
+    "warnings": [],
     "reason": null
   },
   "allowedActions": []
 }
 ```
 
-Completion preserves the last successful `VALID` or `PARTIAL` validation status for historical context.
+Completion preserves the last `VALID` or `PARTIAL` status for historical context.
 
-## Error Responses
+## Errors
 
-All errors use one simple shape:
+Expected client errors use one shape:
 
 ```json
 {
   "code": "INVALID_TRANSITION",
-  "message": "Cannot go live before validation succeeds."
+  "message": "The requested action is not valid for the current session state."
 }
 ```
 
-| HTTP status | Code | When returned |
+| HTTP status | Code | Condition |
 |---|---|---|
-| `400 Bad Request` | `MALFORMED_REQUEST` | JSON is invalid, required fields are missing, or field values have the wrong type or format. |
-| `404 Not Found` | `SESSION_NOT_FOUND` | `sessionId` is well-formed but no onboarding session exists. |
-| `409 Conflict` | `INVALID_TRANSITION` | The requested action is not valid for the session's backend-owned state. |
-| `409 Conflict` | `INVALID_TRANSITION` | Go-live is requested before the latest validation is `VALID` or `PARTIAL`. |
-| `422 Unprocessable Entity` | `UNSUPPORTED_PAYLOAD_VERSION` | Stored versioned session state cannot be read by this API version. |
+| `400 Bad Request` | `MALFORMED_REQUEST` | Missing/malformed JSON, blank required field, or wrong field type. |
+| `404 Not Found` | `SESSION_NOT_FOUND` | Well-formed UUID does not identify a session. |
+| `409 Conflict` | `INVALID_TRANSITION` | Action is not allowed by current backend workflow state, including premature go-live. |
+| `422 Unprocessable Entity` | `UNSUPPORTED_PAYLOAD_VERSION` | Stored versioned state cannot be read by this application version. |
 
-Example unknown session:
+Examples:
 
 ```json
 {
@@ -314,22 +291,11 @@ Example unknown session:
 }
 ```
 
-Example unsupported payload version:
-
-```json
-{
-  "code": "UNSUPPORTED_PAYLOAD_VERSION",
-  "message": "Details payload version 2 is not supported."
-}
-```
-
-Example malformed request:
-
 ```json
 {
   "code": "MALFORMED_REQUEST",
-  "message": "companyName is required."
+  "message": "apiKey is required"
 }
 ```
 
-Error messages must be safe to show to a user and must never echo an API key or other submitted credential.
+Error responses and logs must never echo submitted credentials.

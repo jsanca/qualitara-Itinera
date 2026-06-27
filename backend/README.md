@@ -1,46 +1,55 @@
-# backend
+# Itinera Backend
 
-Kotlin Spring Boot API for Itinera.
+Kotlin/Spring Boot API for the backend-owned Itinera onboarding workflow.
 
-## Running
+## Requirements
 
-Start PostgreSQL first:
+- JDK 21
+- PostgreSQL 16, normally started through the root Docker Compose file
+
+## Run
+
+From the repository root, start PostgreSQL:
 
 ```bash
 docker compose up -d postgres
 ```
 
-Run the backend:
+Then run from this directory:
 
 ```bash
 ./gradlew bootRun
 ```
 
-Health check:
+The API listens on `http://localhost:8080`. Health check:
 
 ```bash
 curl http://localhost:8080/actuator/health
 ```
 
-## Testing
+## Test
+
+Tests include pure domain tests and PostgreSQL-backed Spring integration tests, so PostgreSQL must be running.
 
 ```bash
 ./gradlew test
 ```
 
-Run a single test class:
+Run one class:
 
 ```bash
-./gradlew test --tests "com.qualitara.itinera.ItineraApplicationTests"
+./gradlew test --tests "com.qualitara.itinera.api.OnboardingApiIntegrationTest"
 ```
 
-## Stack
+## Structure
 
-- Kotlin 2.1.21 + Spring Boot 3.5.0
-- Gradle 9.6.1 (Kotlin DSL)
-- PostgreSQL 16 via HikariCP
-- Flyway migrations: `src/main/resources/db/migration/`
-- Spring JDBC (`NamedParameterJdbcTemplate`)
-- Spring Boot Actuator (`/actuator/health`)
+- `api/` — REST controller, request/response DTOs, error mapping, application orchestration
+- `workflow/` — pure state transitions and allowed-action policy
+- `provider/` — validation port, deterministic fake, attempt orchestration
+- `golive/` — transactional and idempotent completion service
+- `internal/persistence/` — JDBC repositories, stored records, JSONB mapping
+- `resources/db/migration/` — Flyway schema
 
-See `docs/ARCHITECTURE.md` for design details.
+The Provider fake is driven by exact `accountId` values: `valid`, `partial`, `invalid`, `unavailable`, and `timeout`. Raw API keys are never persisted or returned.
+
+See the root [README](../README.md), [architecture](../docs/ARCHITECTURE.md), and [API contract](../docs/API_CONTRACT.md).

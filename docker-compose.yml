@@ -9,6 +9,30 @@ services:
       - "5432:5432"
     volumes:
       - itinera-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U itinera -d itinera"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/itinera
+      SPRING_DATASOURCE_USERNAME: itinera
+      SPRING_DATASOURCE_PASSWORD: itinera
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
 
 volumes:
   itinera-postgres-data:

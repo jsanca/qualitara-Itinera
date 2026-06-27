@@ -39,6 +39,8 @@ PostgreSQL is a persistence boundary only.
 - Provider call orchestration.
 - Application logging and observability.
 
+The current fake-Provider validation is synchronous and in-process, so its orchestration uses one application transaction. This does not set the design for a real HTTP Provider: external I/O should occur outside a database transaction, with `PENDING` committed before the call and the final attempt/outcome committed afterward.
+
 ## `partner_account` Cascade Decision
 
 `onboarding_step_state` and `provider_validation_attempt` use `ON DELETE CASCADE` on their `session_id` foreign key. Deleting a session cascades to its step states and validation history — these are session-owned lifecycle records with no independent existence.

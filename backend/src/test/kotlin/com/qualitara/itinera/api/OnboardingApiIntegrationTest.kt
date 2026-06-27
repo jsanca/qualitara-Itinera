@@ -248,6 +248,43 @@ class OnboardingApiIntegrationTest {
     }
 
     @Test
+    fun `unavailable retry flow — unavailable response includes retry action, retry with valid credentials succeeds, go-live works`() {
+        val sessionId = createSession()
+
+        // Step 1: submit details with unavailable accountId and validate → UNAVAILABLE
+        submitDetails(sessionId, accountId = "unavailable", apiKey = "unavail-key")
+        val unavailableResponse = triggerValidation(sessionId, apiKey = "unavail-key")
+        val unavailableTree = objectMapper.readTree(unavailableResponse)
+
+        assert(unavailableTree["validationStatus"].asText() == "UNAVAILABLE") { "First validation must be UNAVAILABLE" }
+        assert(unavailableTree["allowedActions"].find { it.asText() == "RETRY_VALIDATION" } != null) {
+            "UNAVAILABLE response must include RETRY_VALIDATION action"
+        }
+
+        // Step 2: re-submit with valid accountId (credentials changed → BR-001: STALE)
+        val staleResponse = submitDetails(sessionId, accountId = "valid", apiKey = "new-key")
+        val staleTree = objectMapper.readTree(staleResponse)
+        assert(staleTree["validationStatus"].asText() == "STALE") { "Changed credentials must mark validation STALE" }
+        assert(staleTree["currentStep"].asText() == "VALIDATION") { "Must stay in VALIDATION after STALE" }
+
+        // Step 3: retry validation with new credentials → VALID
+        val validResponse = triggerValidation(sessionId, apiKey = "new-key")
+        val validTree = objectMapper.readTree(validResponse)
+        assert(validTree["validationStatus"].asText() == "VALID") { "Retry with valid credentials must succeed" }
+        assert(validTree["currentStep"].asText() == "REVIEW") { "Must advance to REVIEW after VALID" }
+
+        // Step 4: go-live succeeds
+        mockMvc.post("/api/onboarding/sessions/$sessionId/go-live")
+            .andExpect {
+                status { isOk() }
+                jsonPath("$.currentStep") { value("COMPLETE") }
+                jsonPath("$.sessionStatus") { value("LIVE") }
+                jsonPath("$.validationStatus") { value("VALID") }
+                jsonPath("$.allowedActions") { isEmpty() }
+            }
+    }
+
+    @Test
     fun `go-live rejected before validation succeeds returns 409`() {
         val sessionId = createSession()
         submitDetails(sessionId, accountId = "invalid")

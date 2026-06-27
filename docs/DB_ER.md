@@ -4,6 +4,8 @@ The persistence model is built around a central `onboarding_session` that tracks
 
 Validation attempts are recorded separately in `provider_validation_attempt`, giving a full audit trail of every call made to the external Provider, including retries and failure outcomes. Once a partner completes the flow, a `partner_account` row is created in the same transaction that marks the session complete, ensuring no half-committed state is possible.
 
+The raw Provider API key is not stored in any table or JSONB payload. Details state contains a masked display value and SHA-256 credential fingerprint; validation attempts contain only a request fingerprint.
+
 ```mermaid
 erDiagram
     onboarding_session {
@@ -63,3 +65,17 @@ erDiagram
 | `onboarding_step_status` | `NOT_STARTED`, `IN_PROGRESS`, `COMPLETED`, `BLOCKED` |
 | `provider_validation_outcome` | `VALID`, `PARTIAL`, `INVALID`, `UNAVAILABLE`, `TIMEOUT` |
 | `partner_account_status` | `LIVE` |
+
+## Constraints and Lifecycle
+
+| Constraint | Purpose |
+|---|---|
+| `UNIQUE (onboarding_step_state.session_id, step_key)` | One latest resumable payload per step; supports upsert. |
+| `UNIQUE (provider_validation_attempt.session_id, attempt_number)` | Stable ordered audit history for each session. |
+| `UNIQUE (partner_account.session_id)` | At most one live account from an onboarding session. |
+| Step/attempt foreign keys with `ON DELETE CASCADE` | Step state and audit attempts are session-owned lifecycle records. |
+| Partner-account foreign key without cascade | A live business account cannot be deleted implicitly with its onboarding session. |
+
+`payload_version` is duplicated alongside the embedded JSON `version`: JSON remains self-describing while the relational column supports compatibility checks and future migrations.
+
+The schema is defined by [`backend/src/main/resources/db/migration/V1__initial_backend_foundation.sql`](../backend/src/main/resources/db/migration/V1__initial_backend_foundation.sql). Persistence rationale is recorded in ADRs [0003](adr/0003-hybrid-relational-jsonb-step-state.md), [0004](adr/0004-version-jsonb-payloads-at-application-boundary.md), and [0005](adr/0005-keep-postgresql-as-persistence-boundary.md).

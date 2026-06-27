@@ -1,426 +1,173 @@
 # Itinera Architecture
 
-## Overview
+## System Overview
 
-Itinera is a resumable partner onboarding workflow implemented as a Kotlin + React + PostgreSQL vertical slice.
+Itinera is a resumable partner-onboarding vertical slice. The React frontend talks only to the Kotlin/Spring Boot API. The API owns workflow state, persists it in PostgreSQL, validates credentials through a Provider port, and completes onboarding transactionally.
 
-The system lets a partner company:
-
-1. Enter company and Provider credentials.
-2. Validate the Provider integration.
-3. Review discovered Provider items.
-4. Go live.
-
-The central architectural concern is not the wizard UI itself, but the reliable handling of workflow state, resumability, idempotency, Provider failures, and the final go-live transition.
-
-## Architectural Goals
-
-* Keep the backend as the source of truth for workflow state.
-* Make the onboarding flow resumable across page reloads and backend restarts.
-* Keep the submitted workflow fixed and simple.
-* Preserve extension seams for future dynamic workflows.
-* Make Provider validation safe to retry.
-* Make go-live idempotent and transactional.
-* Prefer explicit SQL and migrations over hidden persistence behavior.
-* Add tests alongside each implementation slice.
-
-## System Shape
-
-```text
-React Frontend
-      |
-      | HTTP/JSON
-      v
-Kotlin Spring Boot API
-      |
-      | Port
-      v
-ProviderValidationPort
-      |
-      v
-FakeProviderValidationClient
-
-Kotlin Spring Boot API
-      |
-      v
-PostgreSQL
+```mermaid
+flowchart LR
+    Browser["React wizard"] -->|"HTTP/JSON"| API["Spring Boot API"]
+    API --> Workflow["Workflow policy"]
+    API --> Validation["Provider validation service"]
+    Validation --> Port["ProviderValidationPort"]
+    Port --> Fake["FakeProviderValidationClient"]
+    API --> GoLive["Go-live service"]
+    API --> Repositories["JDBC repositories"]
+    Validation --> Repositories
+    GoLive --> Repositories
+    Repositories --> DB[("PostgreSQL")]
 ```
 
-The frontend communicates only with the Itinera API. It does not call the Provider directly.
+The fake Provider is in-process and deterministic. It can later be replaced by an HTTP adapter without changing workflow rules or the public REST contract.
 
-For the take-home slice, the Provider is implemented as an in-process fake behind a port. This keeps the focus on workflow correctness and retry behavior rather than infrastructure.
-
-## Backend Source of Truth
-
-The backend owns:
-
-* current onboarding step
-* session status
-* step payloads
-* validation status
-* allowed actions
-* go-live eligibility
-
-The frontend renders the state returned by the backend. It may keep temporary form state locally, but it must not decide workflow transitions on its own.
-
-A typical session response should include enough information for the frontend to render the correct screen after a reload:
-
-```json
-{
-  "sessionId": "...",
-  "currentStep": "VALIDATION",
-  "status": "DRAFT",
-  "details": {
-    "companyName": "Acme Inc.",
-    "accountId": "valid-account",
-    "apiKeyPresent": true,
-    "apiKeyMasked": "********"
-  },
-  "validation": {
-    "status": "PARTIAL",
-    "items": [],
-    "warnings": []
-  },
-  "allowedActions": [
-    "EDIT_DETAILS",
-    "RETRY_VALIDATION",
-    "GO_TO_REVIEW"
-  ]
-}
-```
-
-## Workflow Model
-
-The submitted slice uses a fixed three-step workflow:
-
-1. `DETAILS`
-2. `VALIDATION`
-3. `REVIEW`
-4. `LIVE`
-
-The flow is intentionally not implemented as a dynamic form engine. Three fixed steps are sufficient for the prompt and keep the project focused.
-
-The workflow rules should still be isolated behind a small domain boundary so that a future implementation could load workflow definitions from PostgreSQL.
-
-```text
-WorkflowDefinitionPort
-        |
-        +-- StaticWorkflowDefinition
-        |
-        +-- DatabaseWorkflowDefinition     future-forward
-```
-
-## Workflow Diagram
+## Backend-Owned Workflow
 
 ```mermaid
 stateDiagram-v2
     [*] --> DETAILS
-
     DETAILS --> VALIDATION: submit details
-
-    VALIDATION --> REVIEW: provider valid
-    VALIDATION --> REVIEW: provider partial
-    VALIDATION --> DETAILS: invalid credentials
-    VALIDATION --> VALIDATION: retry unavailable / timeout
-
+    VALIDATION --> REVIEW: VALID or PARTIAL
+    VALIDATION --> DETAILS: INVALID
+    VALIDATION --> VALIDATION: UNAVAILABLE or TIMEOUT; retry
+    REVIEW --> VALIDATION: credentials changed; STALE
     REVIEW --> COMPLETE: go live
-    REVIEW --> VALIDATION: edit credentials (credential change marks STALE)
-
     COMPLETE --> [*]
 ```
 
-## Important Workflow Rules
+`DETAILS`, `VALIDATION`, `REVIEW`, and `COMPLETE` are workflow steps. `DRAFT` and `LIVE` are session lifecycle statuses. A completed session is terminal.
 
-### Submit Details
+Every session response contains `currentStep`, `sessionStatus`, `validationStatus`, and `allowedActions`. The frontend may keep unsent form values locally, but it does not advance the workflow or infer recovery actions.
 
-`DETAILS` is the initial data-entry step. Submitting details advances the session to `VALIDATION`.
+Important rules:
 
-Submitting details is idempotent. Re-submitting with the same credentials preserves existing workflow state.
+- Details submission is an upsert. Repeating identical credentials preserves trusted validation state.
+- BR-001: changing `accountId` or `apiKey` changes the credential fingerprint, marks validation `STALE`, and returns the workflow to `VALIDATION`.
+- Validation follows `startValidation → PENDING → applyValidationOutcome`.
+- `VALID` and `PARTIAL` permit go-live; all other validation states block it.
+- `UNAVAILABLE` and `TIMEOUT` remain retryable.
+- Go-live creates at most one partner account and cannot partially complete.
 
-BR-001: if `accountId` or `apiKey` changes after a prior validation, the previous result is invalidated. The workflow returns to `VALIDATION` with status `STALE`. Editing credentials does not return the session to `DETAILS`; it only marks validation as untrusted and requires re-validation before go-live.
+## Backend Boundaries
 
-### Validate Integration
+### API Layer
 
-Validation calls the Provider through `ProviderValidationPort`.
+`com.qualitara.itinera.api` contains the thin controller, request/response DTOs, exception mapping, and `OnboardingApplicationService`. The application service coordinates repositories and domain/application services, then re-reads persisted state to assemble the authoritative full session response.
 
-Validation is retry-safe:
-
-* A new attempt may be recorded each time.
-* The latest validation result replaces the current validation step state.
-* Failed transient attempts must not corrupt previously stored details.
-* Unavailable or timeout responses must leave the user able to retry.
-
-Provider outcomes:
-
-* `VALID`: persist items, allow review.
-* `PARTIAL`: persist items and warnings, allow review.
-* `INVALID`: persist reason, allow editing credentials.
-* `UNAVAILABLE` / `TIMEOUT`: persist transient status, allow retry.
-
-### Review and Go Live
-
-Go-live is allowed only when the latest validation result is `VALID` or `PARTIAL`.
-
-Go-live must be transactional:
-
-* create or reuse the partner account
-* mark the partner account live
-* mark the onboarding session complete
-
-Calling go-live more than once must not create duplicate partner accounts.
-
-## Persistence Architecture
-
-Itinera uses PostgreSQL with Flyway migrations.
-
-The persistence model is hybrid relational + JSONB:
-
-* relational columns model lifecycle, identity, status, and constraints
-* JSONB payloads store per-step data that can evolve over time
-
-This avoids schema churn for every future onboarding step while keeping the core lifecycle explicit.
-
-### Core Tables
-
-```text
-onboarding_session
-- id
-- current_step
-- status
-- created_at
-- updated_at
-- completed_at
-```
-
-```text
-onboarding_step_state
-- id
-- session_id
-- step_key
-- status
-- payload jsonb
-- created_at
-- updated_at
-- completed_at
-
-unique(session_id, step_key)
-```
-
-```text
-provider_validation_attempt
-- id
-- session_id
-- attempt_number
-- account_id
-- request_fingerprint
-- outcome
-- response_payload jsonb
-- error_message
-- started_at
-- completed_at
-```
-
-```text
-partner_account
-- id
-- session_id unique
-- company_name
-- status
-- went_live_at
-- created_at
-```
-
-## JSONB Payload Strategy
-
-Step payloads are stored as JSONB, but the application must not treat them as untyped maps everywhere.
-
-Each step should have a typed Kotlin payload DTO:
-
-```text
-DetailsPayload
-ValidationPayload
-ReviewPayload
-```
-
-The service layer is responsible for validating payload shape and business rules before persisting.
-
-A future implementation could add JSON Schema validation for versioned payloads.
-
-## Workflow Domain Package
-
-The `com.qualitara.itinera.workflow` package owns all onboarding workflow rules. It does not own HTTP, SQL, Provider calls, or frontend state.
-
-Key components:
-
-```text
-AllowedActionCalculator     — pure component: step + validationStatus → Set<AllowedAction>
-OnboardingWorkflowService   — service: owns all state transitions and logs decisions
-CredentialFingerprint       — computes SHA-256 fingerprint of accountId:apiKey for BR-001
-ValidationStatus            — workflow-level status enum (adds NOT_STARTED, PENDING, STALE)
-AllowedAction               — enum of actions the frontend may offer (SUBMIT_DETAILS, etc.)
-WorkflowSessionState        — domain model: current step + validationStatus + fingerprint
-```
-
-Sub-packages:
-
-- `workflow.payload` — typed step payload DTOs (DetailsPayload, ValidationPayload, ReviewPayload, ProviderItem)
-- `workflow.model` — WorkflowSessionState
-- `workflow.exception` — InvalidWorkflowTransitionException, UnsupportedPayloadVersionException
-
-All transition methods in `OnboardingWorkflowService` are pure: they accept a state, validate preconditions, and return a new state. The caller (API layer) is responsible for loading from and persisting to the repositories.
-
-### BR-001: Credential Change Invalidates Validation
-
-When a partner resubmits details with a changed `accountId` or API key, `OnboardingWorkflowService.applyDetailsSubmission` detects the fingerprint change and sets `validationStatus = STALE`, forcing re-validation before go-live is allowed.
-
-## Provider Integration
-
-The Provider is represented by a port:
-
-```kotlin
-interface ProviderValidationPort {
-    fun validate(request: ProviderValidationRequest): ProviderValidationResult
-}
-```
-
-For this slice:
-
-```text
-FakeProviderValidationClient
-```
-
-Future-forward alternatives:
-
-```text
-HttpProviderValidationClient
-GrpcProviderValidationClient
-WireMock-backed integration tests
-```
-
-The fake Provider should support deterministic trigger values so each outcome can be manually tested and documented.
-
-## API Contract Direction
-
-The REST API should expose session-oriented operations:
+Implemented endpoints:
 
 ```text
 POST /api/onboarding/sessions
 GET  /api/onboarding/sessions/{sessionId}
 PUT  /api/onboarding/sessions/{sessionId}/details
-POST /api/onboarding/sessions/{sessionId}/validate
+POST /api/onboarding/sessions/{sessionId}/validation
 POST /api/onboarding/sessions/{sessionId}/go-live
 ```
 
-Responses should be DTOs aligned with frontend TypeScript types.
+See [API_CONTRACT.md](API_CONTRACT.md) for request, response, and error examples.
 
-A future implementation could generate TypeScript types from OpenAPI.
+### Workflow Domain
 
-For this slice, manually mirrored DTOs are acceptable if the contract remains small and clear.
+`com.qualitara.itinera.workflow` owns pure business rules:
+
+- `OnboardingWorkflowService` validates and applies transitions.
+- `AllowedActionPolicy.resolve` derives the actions exposed to the frontend.
+- `CredentialFingerprint` computes the SHA-256 digest used for credential-change detection.
+- typed payloads (`DetailsPayload`, `ValidationPayload`, `ReviewPayload`) define stored step shapes.
+
+It does not own HTTP, SQL, Provider transport, or transaction orchestration.
+
+### Provider Validation
+
+`ProviderValidationPort` accepts `ProviderValidationRequest(accountId, apiKey)` and returns `ProviderValidationResult`. `FakeProviderValidationClient` maps exact `accountId` triggers to `VALID`, `PARTIAL`, `INVALID`, `UNAVAILABLE`, or `TIMEOUT`.
+
+`ProviderValidationService`:
+
+1. loads the session and submitted details;
+2. persists the latest validation state as `PENDING`;
+3. calls the port with the API key supplied to the validation request;
+4. inserts an immutable audit attempt containing only a fingerprint, outcome, and safe response data;
+5. upserts the latest validation payload;
+6. persists any workflow-step change.
+
+For the synchronous in-process fake, these operations use one Spring transaction. A real network adapter must split the transaction so it does not hold database resources during external I/O.
+
+### Transactional Go-Live
+
+`GoLiveService` loads details and the latest validation, delegates eligibility to the workflow domain, creates or reuses the single `partner_account`, and marks the session `COMPLETE/LIVE` in one transaction. An explicit lookup provides clean idempotency; the database unique constraint on `partner_account.session_id` is the structural backstop.
+
+### Persistence
+
+`com.qualitara.itinera.internal.persistence` is an implementation boundary:
+
+- records represent stored rows, not rich domain objects;
+- repositories use `NamedParameterJdbcTemplate` and explicit SQL;
+- `JsonbPayloadMapper` owns Jackson/JSONB conversion;
+- Flyway owns schema evolution.
+
+PostgreSQL enforces types, keys, foreign keys, uniqueness, and storage constraints. Kotlin owns workflow and business rules. See [DB_ER.md](DB_ER.md) and ADRs [0003](adr/0003-hybrid-relational-jsonb-step-state.md), [0004](adr/0004-version-jsonb-payloads-at-application-boundary.md), and [0005](adr/0005-keep-postgresql-as-persistence-boundary.md).
+
+## Persistence and Resume
+
+The storage model is hybrid relational plus JSONB:
+
+- `onboarding_session` stores current step and lifecycle.
+- `onboarding_step_state` stores one versioned JSONB payload per session/step.
+- `provider_validation_attempt` stores ordered validation audit history.
+- `partner_account` stores the live result, unique per session.
+
+The browser stores only `itinera.sessionId`. On reload, it fetches the session and renders the returned state. Details and latest validation survive backend restart because they are reconstructed from persisted step payloads.
+
+## Credential Handling
+
+The raw API key is never persisted, logged, or returned:
+
+- details submission computes and stores a SHA-256 fingerprint plus a masked display value;
+- validation requires the user to enter the API key again;
+- the validation service holds it only for the active Provider call;
+- audit rows contain the request fingerprint, not the key;
+- response DTOs explicitly omit both the raw key and fingerprint.
+
+This design avoids plaintext credential storage in the take-home slice. A real product would use an encrypted credential vault if unattended re-validation were required.
 
 ## Frontend Architecture
 
-The frontend is a fixed three-step wizard:
+`OnboardingPage` owns lightweight session orchestration:
 
-```text
-DetailsStep
-ValidationStep
-ReviewStep
+1. read `itinera.sessionId` from `localStorage`;
+2. resume it with `GET`, or create a session if absent/not found;
+3. render `DetailsStep`, `ValidationStep`, `ReviewStep`, or completion from `currentStep`;
+4. invoke only actions present in `allowedActions`;
+5. replace local session state with every full mutation response.
+
+Vite proxies `/api` to the backend in development. The Docker frontend uses nginx for static files, SPA fallback, and the same `/api` reverse proxy.
+
+## Error Model
+
+Expected client errors use:
+
+```json
+{
+  "code": "INVALID_TRANSITION",
+  "message": "The requested action is not valid for the current session state."
+}
 ```
 
-The frontend should:
-
-* store only `sessionId` in `localStorage`
-* fetch the session from the backend on load
-* render based on backend `currentStep` and `allowedActions`
-* keep form input locally only until submitted
-* show validation outcomes clearly
-* allow retry when validation is unavailable or timed out
-
-The frontend should not:
-
-* independently advance steps without backend confirmation
-* call the mock Provider directly
-* store the API key after submission
+Known mappings are `400 MALFORMED_REQUEST`, `404 SESSION_NOT_FOUND`, `409 INVALID_TRANSITION`, and `422 UNSUPPORTED_PAYLOAD_VERSION`. Provider outcomes such as `INVALID`, `UNAVAILABLE`, and `TIMEOUT` are successful workflow results (`200`), not protocol failures.
 
 ## Testing Strategy
 
-Tests should be added with each implementation slice.
+- pure workflow tests cover transitions, stale credentials, guards, and allowed actions;
+- fake-Provider tests cover deterministic mappings without Spring;
+- PostgreSQL-backed tests cover repositories, validation orchestration, go-live transactions, and REST flows;
+- end-to-end backend flows cover valid, partial, transient retry, invalid blocking, redaction, and repeated go-live;
+- frontend production compilation is enforced with `npm run build`; automated frontend tests remain deferred.
 
-Priority:
+The suite requires a local PostgreSQL instance. Testcontainers and browser-level tests are recorded in [FUTURE_FORWARDS.md](FUTURE_FORWARDS.md).
 
-1. Workflow transition tests.
-2. Provider outcome mapping tests.
-3. Persistence tests for resumability.
-4. Idempotency tests for details, validation retry, and go-live.
-5. Frontend smoke tests if time allows.
+## Principal Tradeoffs
 
-The project should avoid coverage farming. The tests should prove the behaviors the prompt evaluates.
-
-## Key Tradeoffs
-
-### Fixed Workflow vs Dynamic Workflow Engine
-
-Decision:
-
-Use a fixed workflow in code for the submitted slice.
-
-Reason:
-
-The prompt defines exactly three steps. A dynamic workflow engine would distract from the evaluated concerns.
-
-Future-forward:
-
-Load workflow steps and transitions from PostgreSQL through a `DatabaseWorkflowDefinition`.
-
-### JSONB Step Payloads vs Fully Relational Step Tables
-
-Decision:
-
-Use JSONB payloads for step-specific data.
-
-Reason:
-
-This keeps the schema adaptable while preserving relational lifecycle constraints.
-
-Tradeoff:
-
-The database enforces fewer field-level constraints. Kotlin DTOs and service validation compensate.
-
-### In-Process Fake Provider vs Separate Mock Service
-
-Decision:
-
-Use an in-process fake behind a port.
-
-Reason:
-
-It exercises all Provider outcomes without spending time on infrastructure.
-
-Future-forward:
-
-Replace with an HTTP mock Provider or external service adapter.
-
-### NamedParameterJdbcTemplate vs JPA
-
-Decision:
-
-Use explicit SQL through `NamedParameterJdbcTemplate`.
-
-Reason:
-
-The model is small, JSONB is central, and transactional behavior should be easy to inspect.
-
-Tradeoff:
-
-More manual mapping code than JPA.
-
-## Deferred Architecture Work
-
-* Auth and multi-partner tenancy.
-* Encrypted credential storage.
-* Dynamic workflow definitions.
-* Versioned JSON Schema validation.
-* OpenAPI-generated frontend types.
-* Separate Provider service.
-* Testcontainers-backed PostgreSQL integration tests.
-* Playwright end-to-end wizard tests.
+- A fixed workflow is clearer and faster to verify than a dynamic engine, at the cost of code changes for new steps.
+- JSONB reduces schema churn, at the cost of application-owned payload validation and version migration.
+- Explicit JDBC is transparent, at the cost of manual row mapping.
+- The in-process Provider fake makes outcomes deterministic, but does not exercise HTTP transport behavior.
+- Manual DTO mirroring keeps tooling small, but can drift without disciplined contract tests.

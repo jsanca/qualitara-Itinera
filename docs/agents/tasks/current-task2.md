@@ -1,159 +1,96 @@
-# Mini Task 009A — Backend End-to-End Flow Tests
-
-## Context
-
-Project: Itinera
-
-The backend has integration tests for persistence, Provider validation, go-live, and REST endpoints. This task adds a small number of end-to-end backend tests that prove the full REST flow works across layers.
-
-Do not change production code unless a test exposes a real bug.
+# Task 011 — Documentation Finalization
 
 ## Goal
 
-Add backend integration tests for complete onboarding flows.
-
-## Engineering Capability Added
-
-Backend full-flow contract verified end to end.
+Finalize documentation so an evaluator can clone, run, test, and understand Itinera quickly.
 
 ## Scope
 
-Create or update a test class such as:
+Review and update:
+
+* `README.md`
+* `docs/ARCHITECTURE.md`
+* `docs/API_CONTRACT.md`
+* `docs/DB_ER.md`
+* `docs/FUTURE_FORWARDS.md`
+* `docs/PLAN.md`
+* `docs/adr/`
+* `AI_LOG.md`
+* backend/frontend README files
+
+## README Must Include
+
+* What Itinera is.
+* Implemented vertical slice.
+* Tech stack.
+* How to run with Docker.
+* How to run backend/frontend manually.
+* How to run tests.
+* Provider mock trigger values:
+
+    * `valid`
+    * `partial`
+    * `invalid`
+    * `unavailable`
+    * `timeout`
+* Key design decisions.
+* Tradeoffs.
+* Deferred work.
+* What would be done with another day.
+* Link to AI log.
+
+## AI_LOG
+
+Make sure it is an index into:
 
 ```text
-backend/src/test/kotlin/com/qualitara/itinera/api/OnboardingFlowIntegrationTest.kt
+docs/agents/tasks/
+docs/agents/reports/
 ```
 
-Use `MockMvc` and the real PostgreSQL-backed Spring context.
+It should briefly explain the workflow:
 
-## Required Tests
+* planning
+* implementation
+* review
+* corrections
+* documentation
 
-### 1. Happy Path — VALID
+## Future Forwards
 
-Flow:
+Must include:
 
-```text
-POST /api/onboarding/sessions
-PUT  /api/onboarding/sessions/{id}/details  accountId=valid
-POST /api/onboarding/sessions/{id}/validation
-POST /api/onboarding/sessions/{id}/go-live
-```
-
-Assert final response:
-
-```text
-currentStep = COMPLETE
-sessionStatus = LIVE
-validationStatus = VALID
-allowedActions = []
-```
-
-Also assert:
-
-* raw apiKey is never returned
-* partner account exists only once if repository access is available
-
-### 2. PARTIAL Can Go Live
-
-Same flow with:
-
-```text
-accountId=partial
-```
-
-Assert:
-
-* warnings are returned after validation
-* go-live succeeds
-* final session is COMPLETE/LIVE
-
-### 3. UNAVAILABLE Then Retry VALID
-
-Flow:
-
-```text
-create session
-submit details with accountId=unavailable
-validate → UNAVAILABLE
-submit details with accountId=valid and same/new apiKey
-validate → VALID
-go-live → COMPLETE/LIVE
-```
-
-Assert:
-
-* unavailable response includes retry action
-* retry produces successful validation
-* session can go live afterward
-
-### 4. INVALID Blocks Go Live
-
-Flow:
-
-```text
-create session
-submit details accountId=invalid
-validate → INVALID
-go-live → rejected
-```
-
-Assert:
-
-* HTTP 409
-* error code INVALID_TRANSITION
-* session is not LIVE
-
-## Constraints
-
-Do not:
-
-* add frontend code
-* add new endpoints
-* change API contract
-* add production features
-* overbuild test helpers
-
-Keep tests readable.
+* encrypted credential storage / credential vault
+* real Provider HTTP client
+* split transaction around real Provider call
+* frontend tests
+* Testcontainers
+* auth
+* dynamic workflow definition
+* CI
 
 ## Validation
+
+Check all links.
 
 Run:
 
 ```bash
-docker compose up -d postgres
-cd backend
-./gradlew test
+docker compose up --build
+cd backend && ./gradlew test
+cd frontend && npm run build
 ```
 
-## Documentation
+## Report
 
 Create:
 
 ```text
-docs/agents/tasks/009a-backend-e2e-flow-tests.md
-docs/agents/reports/009a-backend-e2e-flow-tests.md
+docs/agents/reports/011-documentation-finalization.md
 ```
-
-Update:
-
-```text
-AI_LOG.md
-```
-
-## Report Requirements
-
-Use the standard report structure.
 
 Capability:
 
 ```text
-Full backend onboarding flows verified end to end.
+Evaluator-ready documentation finalized.
 ```
-
-## Success Criteria
-
-* Complete valid flow passes.
-* Complete partial flow passes.
-* Unavailable → retry → valid flow passes.
-* Invalid blocks go-live.
-* All backend tests pass.

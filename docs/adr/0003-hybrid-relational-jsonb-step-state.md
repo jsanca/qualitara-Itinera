@@ -8,7 +8,7 @@ Accepted
 
 The onboarding flow must be resumable. Each step has different data:
 
-- **Details:** company name, account id, API key presence.
+- **Details:** company name, account id, API key presence/mask, and a credential fingerprint. The raw API key is never stored.
 - **Validation:** status, items, warnings, invalid reason, transient failure details.
 - **Review:** go-live readiness confirmation.
 
