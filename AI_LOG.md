@@ -25,4 +25,5 @@ Detailed task definitions and completion reports are tracked in:
 | 006b | Provider Validation Orchestration | [task](docs/agents/tasks/006b-provider-validation-orchestration.md) | [report](docs/agents/reports/006b-provider-validation-orchestration.md) |
 | 006c | Provider Validation Review Fixes | [task](docs/agents/tasks/006c-provider-validation-review-fixes.md) | [report](docs/agents/reports/006c-provider-validation-review-fixes.md) |
 | 007 | Transactional Go Live | [task](docs/agents/tasks/007-transactional-go-live.md) | [report](docs/agents/reports/007-transactional-go-live.md) |
+| 008 | REST API Contract Implementation | [task](docs/agents/tasks/008-rest-api-contract-implementation.md) | [report](docs/agents/reports/008-rest-api-contract-implementation.md) |
 | 008a | Wizard UI Skeleton | [task](docs/agents/tasks/fe/002-wizard-ui-skeleton.md) | [report](docs/agents/reports/008a-wizard-ui-skeleton.md) |

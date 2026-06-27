@@ -1,269 +1,186 @@
-# Task 007 — Transactional Go Live
+# Task 009 — Frontend Backend Integration
 
 ## Context
 
 Project: Itinera
 
-The persistence model, workflow domain, and Provider validation orchestration are now in place.
+The backend REST API is now implemented and tested. The frontend wizard skeleton already exists and is currently driven by mock session data.
 
-This phase implements the final backend transition: taking a validated or partially validated onboarding session live.
-
-This task does not implement REST controllers yet. It creates the service capability that REST will call.
+This task replaces mock data with real backend API calls and implements reload-resume behavior.
 
 ## Goal
 
-Implement a transactional, idempotent go-live service.
-
-The service must:
-
-* allow go-live only after validation is `VALID` or `PARTIAL`
-* create a `partner_account` exactly once
-* mark the onboarding session `LIVE`
-* move the workflow step to `COMPLETE`
-* avoid half-committed state
-* make repeated go-live calls safe
+Make the React wizard drive the full onboarding flow through the backend.
 
 ## Engineering Capability Added
 
-Transactional and idempotent go-live transition.
+Frontend wizard integrated with backend-owned onboarding state.
 
 ## Scope
 
-Create a service such as:
+Implement:
+
+* API client functions in `frontend/src/api/onboardingApi.ts`
+* session bootstrap using `localStorage`
+* backend-driven rendering from `currentStep`, `validationStatus`, and `allowedActions`
+* details submission
+* validation/retry
+* review and go-live
+* loading/error states
+
+## API Endpoints
+
+Use the implemented backend endpoints:
 
 ```text
-GoLiveService
+POST /api/onboarding/sessions
+GET  /api/onboarding/sessions/{sessionId}
+PUT  /api/onboarding/sessions/{sessionId}/details
+POST /api/onboarding/sessions/{sessionId}/validation
+POST /api/onboarding/sessions/{sessionId}/go-live
 ```
 
-or, if the existing application-service structure already suggests a better name, use that.
+## Behavior
 
-The service should orchestrate:
+### On Page Load
 
-* `OnboardingSessionRepository`
-* `OnboardingStepStateRepository`
-* `PartnerAccountRepository`
-* `OnboardingWorkflowService`
+1. Read `itinera.sessionId` from `localStorage`.
+2. If present, call `GET /api/onboarding/sessions/{sessionId}`.
+3. If not present or if the backend returns 404, call `POST /api/onboarding/sessions`.
+4. Save the returned `sessionId` to `localStorage`.
+5. Render from the returned session state.
 
-## Required Behavior
+### Details Step
 
-### Preconditions
+Submit:
 
-Go-live is allowed only when:
-
-```text
-currentStep = REVIEW
-validationStatus = VALID or PARTIAL
+```json
+{
+  "companyName": "...",
+  "accountId": "...",
+  "apiKey": "..."
+}
 ```
-
-Reject go-live when:
-
-* session does not exist
-* validation step state does not exist
-* validation status is missing
-* validation status is `NOT_STARTED`
-* validation status is `PENDING`
-* validation status is `STALE`
-* validation status is `INVALID`
-* validation status is `UNAVAILABLE`
-* validation status is `TIMEOUT`
-* session is not in `REVIEW`
-* session is already complete but inconsistent
-
-### Idempotency
-
-Calling go-live twice must not create duplicate `partner_account` records.
-
-If the session is already:
-
-```text
-currentStep = COMPLETE
-status = LIVE
-```
-
-and a `partner_account` already exists for the session, return the completed state without creating another account.
-
-Use the existing unique constraint:
-
-```text
-partner_account.session_id unique
-```
-
-as a structural safeguard.
-
-The service should still make the idempotency behavior explicit instead of relying only on constraint exceptions.
-
-### Transactionality
-
-Use Spring transaction management.
-
-Annotate the service method with:
-
-```kotlin
-@Transactional
-```
-
-The transaction should include:
-
-1. reading session state
-2. reading latest validation step payload
-3. creating or reusing partner account
-4. marking session complete/live
-
-No partial state should be committed if an exception occurs before completion.
-
-### Validation Payload
-
-Read the latest `VALIDATION` step state payload.
-
-Deserialize it into:
-
-```text
-ValidationPayload
-```
-
-Use the existing JSONB mapper.
-
-The payload status is the source for go-live eligibility.
-
-### Company Name
-
-Read the latest `DETAILS` step payload.
-
-Deserialize it into:
-
-```text
-DetailsPayload
-```
-
-Use `companyName` to create `partner_account`.
-
-Do not expose or log:
-
-* raw API key
-* credential fingerprint
-* full details payload
-
-### Workflow
-
-Use `OnboardingWorkflowService.applyGoLive(...)` to enforce domain rules.
-
-Do not duplicate workflow transition logic in the go-live service.
-
-The service should reconstruct a `WorkflowSessionState` from persisted session and validation payload, then call the workflow service.
-
-### Logging
-
-Use Kotlin logging.
 
 Rules:
 
-* debug log normal go-live attempt and successful completion using `sessionId`
-* warn log rejected go-live transitions using `sessionId` and reason
-* never log raw payloads
-* never log credential fingerprints
-* never log API keys
+* do not store apiKey in frontend after submit
+* render `apiKeyMasked` / `apiKeyPresent` from backend response
+* update UI from returned session response
 
-### Internal API / KDoc
+### Validation Step
 
-Add KDoc to the service explaining:
+Submit:
 
-* this service owns the transactional go-live use case
-* it does not own Provider validation
-* it does not own REST response shaping
-* it relies on repositories for persistence and workflow service for transition rules
-
-## Tests
-
-Add integration tests requiring PostgreSQL.
-
-Minimum tests:
-
-1. `VALID` validation can go live.
-2. `PARTIAL` validation can go live.
-3. Go-live creates one partner account.
-4. Calling go-live twice does not create a duplicate partner account.
-5. Go-live marks session status `LIVE`.
-6. Go-live marks current step `COMPLETE`.
-7. Go-live rejected for `INVALID`.
-8. Go-live rejected for `UNAVAILABLE`.
-9. Go-live rejected for `TIMEOUT`.
-10. Go-live rejected for `PENDING`.
-11. Go-live rejected when validation step is missing.
-12. Go-live rejected when details step is missing.
-13. Repeated go-live returns completed state if already live and partner account exists.
-
-If test setup becomes large, create clear helper methods.
-
-Do not reduce coverage of previous tests.
-
-## Error Handling
-
-Use existing domain exceptions if appropriate.
-
-If the current exception types are too generic, create focused exceptions such as:
-
-```text
-GoLiveRejectedException
-OnboardingSessionNotFoundException
+```json
+{
+  "apiKey": "..."
+}
 ```
 
-But do not overbuild an exception hierarchy.
+Rules:
 
-REST mapping can be refined in the REST API phase.
+* validation/retry button should call backend validation endpoint
+* API key is required because raw credentials are not persisted
+* after validation, render returned backend state
+* clearly show:
 
-## Out of Scope
+  * PENDING
+  * VALID
+  * PARTIAL
+  * INVALID
+  * UNAVAILABLE
+  * TIMEOUT
+  * STALE
+* show warnings for PARTIAL
+* allow safe retry when backend allowed actions include retry/start validation
+
+### Review Step
+
+Render:
+
+* company details summary
+* provider items
+* partial warnings if present
+* go-live button gated by `allowedActions`
+
+Go live:
+
+* call backend go-live endpoint
+* render COMPLETE/LIVE response
+
+## Constraints
 
 Do not:
 
-* implement REST controllers
-* implement frontend
-* call Provider
-* split Provider validation transactions
-* add auth
-* add dynamic workflow
-* change database schema unless absolutely necessary
+* invent workflow transitions locally
+* store raw API key in localStorage
 * expose credential fingerprint
-* log sensitive data
+* add auth
+* add routing unless necessary
+* add UI libraries
+* implement Provider logic in frontend
+* add complex state management
 
-## Documentation
+## Error Handling
 
-Create:
+Display a simple user-visible error banner.
 
-```text
-docs/agents/tasks/007-transactional-go-live.md
-docs/agents/reports/007-transactional-go-live.md
+If backend returns an error DTO:
+
+```json
+{
+  "code": "...",
+  "message": "..."
+}
 ```
 
-Update:
+show the message.
 
-```text
-AI_LOG.md
-docs/PLAN.md if phase status is tracked
-docs/FUTURE_FORWARDS.md if new production concerns appear
-```
-
-If relevant, update:
-
-```text
-docs/API_CONTRACT.md
-```
-
-only if the service behavior changes a previously documented go-live rule.
+Keep console logging minimal and avoid sensitive values.
 
 ## Validation
 
 Run:
 
 ```bash
-docker compose up -d postgres
-cd backend
-./gradlew test
+cd frontend
+npm run build
 ```
 
-Also run workflow-only tests if useful:
+Manual browser validation:
 
-```bash
-./gradlew test --tests "com.qualitara.itinera.workflow.OnboardingWorkflowServiceTest"
+1. Load app with empty localStorage.
+2. Confirm new session is created.
+3. Refresh page.
+4. Confirm session resumes.
+5. Submit details with `accountId=valid`.
+6. Validate.
+7. Go live.
+8. Confirm COMPLETE/LIVE state.
+
+Also manually test:
+
+* `partial`
+* `invalid`
+* `unavailable`
+* `timeout`
+
+## Documentation
+
+Create:
+
+```text
+docs/agents/tasks/009-frontend-backend-integration.md
+docs/agents/reports/009-frontend-backend-integration.md
+```
+
+Update:
+
+```text
+AI_LOG.md
+frontend/README.md
+README.md if frontend run instructions changed
 ```
 
 ## Report Requirements
@@ -278,20 +195,19 @@ Use the standard report structure:
 * Tradeoffs
 * Follow-ups
 
-The report should describe the capability:
+Capability:
 
 ```text
-Transactional go-live transition established.
+Frontend wizard now drives the onboarding flow through backend state.
 ```
 
 ## Success Criteria
 
-* Go-live succeeds for `VALID`.
-* Go-live succeeds for `PARTIAL`.
-* Go-live fails for every non-eligible validation state.
-* Go-live is idempotent.
-* `partner_account` is not duplicated.
-* Session is marked `LIVE`.
-* Workflow step is marked `COMPLETE`.
-* Transaction boundary prevents half-committed state.
-* Tests pass.
+* Reload resumes from backend state.
+* Frontend uses backend `currentStep`.
+* Frontend uses backend `allowedActions`.
+* Raw API key is not persisted in frontend storage.
+* User can retry validation safely.
+* PARTIAL warnings are visible.
+* VALID/PARTIAL can go live.
+* Build passes.

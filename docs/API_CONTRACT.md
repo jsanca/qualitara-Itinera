@@ -193,7 +193,17 @@ Submitting the same details is safe to repeat and replaces the stored details st
 POST /api/onboarding/sessions/{sessionId}/validation
 ```
 
-The request has no body. This endpoint starts an initial validation or retries a retryable result. It will eventually call the Provider behind the backend's validation port; this contract does not define Provider behavior or its implementation.
+### Request
+
+```json
+{
+  "apiKey": "provider-secret-value"
+}
+```
+
+The `apiKey` is write-only: it is used to call the Provider and must never appear in a response, error, or log. The backend does not persistently store the raw key; a SHA-256 fingerprint is stored in the audit record only.
+
+This endpoint starts an initial validation or retries a retryable result. It will eventually call the Provider behind the backend's validation port; this contract does not define Provider behavior or its implementation.
 
 The returned full session reflects one of the Provider outcomes: `VALID`, `PARTIAL`, `INVALID`, `UNAVAILABLE`, or `TIMEOUT`. A `PENDING` session representation may be observed while an attempt is in progress. Validation attempts must not expose the submitted API key.
 

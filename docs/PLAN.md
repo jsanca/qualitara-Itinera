@@ -90,7 +90,7 @@ Success criteria:
 * Last validation result is resumable.
 * Attempts are auditable.
 
-## Phase 5 — Go Live
+## Phase 5 — Go Live [DONE]
 
 Deliverables:
 
@@ -104,7 +104,7 @@ Success criteria:
 * Calling go-live twice does not duplicate accounts.
 * No half-committed state is possible.
 
-## Phase 6 — REST API Contract
+## Phase 6 — REST API Contract [DONE]
 
 Deliverables:
 
