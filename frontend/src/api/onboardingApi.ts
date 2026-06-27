@@ -1,6 +1,6 @@
 import type {
   OnboardingSessionResponse,
-  DetailsPayload,
+  SubmitDetailsRequest,
 } from '../types/onboarding'
 
 export async function createSession(): Promise<{ sessionId: string }> {
@@ -13,7 +13,7 @@ export async function getSession(_sessionId: string): Promise<OnboardingSessionR
 
 export async function submitDetails(
   _sessionId: string,
-  _details: DetailsPayload
+  _details: SubmitDetailsRequest
 ): Promise<OnboardingSessionResponse> {
   throw new Error('Not implemented yet')
 }

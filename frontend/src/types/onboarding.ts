@@ -2,46 +2,56 @@ export type OnboardingStepKey = 'DETAILS' | 'VALIDATION' | 'REVIEW' | 'COMPLETE'
 
 export type OnboardingSessionStatus = 'DRAFT' | 'LIVE'
 
-export type OnboardingStepStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED' | 'BLOCKED'
-
-export type ProviderValidationOutcome = 'VALID' | 'PARTIAL' | 'INVALID' | 'UNAVAILABLE' | 'TIMEOUT'
+export type ValidationStatus =
+  | 'NOT_STARTED'
+  | 'PENDING'
+  | 'VALID'
+  | 'PARTIAL'
+  | 'INVALID'
+  | 'UNAVAILABLE'
+  | 'TIMEOUT'
+  | 'STALE'
 
 export type AllowedAction =
-  | 'submit_details'
-  | 'retry_validation'
-  | 'edit_details'
-  | 'go_live'
+  | 'SUBMIT_DETAILS'
+  | 'EDIT_DETAILS'
+  | 'START_VALIDATION'
+  | 'RETRY_VALIDATION'
+  | 'GO_TO_REVIEW'
+  | 'GO_LIVE'
 
-export interface DetailsPayload {
+export interface DetailsSummary {
   companyName: string
-  apiKey: string
+  accountId: string
   apiKeyPresent: boolean
-  apiKeyMasked: string
+  apiKeyMasked: string | null
 }
 
-export interface ValidationPayload {
-  outcome: ProviderValidationOutcome
-  accountId: string
-  message?: string
+export interface ProviderItem {
+  externalId: string
+  name: string
+  status: string
 }
 
-export interface ReviewPayload {
-  accountId: string
-  companyName: string
-  itemCount?: number
+export interface ValidationSummary {
+  status: ValidationStatus
+  items: ProviderItem[]
+  warnings: string[]
+  reason: string | null
 }
 
 export interface OnboardingSessionResponse {
   sessionId: string
   currentStep: OnboardingStepKey
-  status: OnboardingSessionStatus
+  sessionStatus: OnboardingSessionStatus
+  validationStatus: ValidationStatus
+  details: DetailsSummary | null
+  validation: ValidationSummary
   allowedActions: AllowedAction[]
-  details?: DetailsPayload
-  validation?: ValidationPayload
 }
 
-export interface ProviderItem {
-  id: string
-  name: string
-  type: string
+export interface SubmitDetailsRequest {
+  companyName: string
+  accountId: string
+  apiKey: string
 }
