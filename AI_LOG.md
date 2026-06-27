@@ -24,3 +24,5 @@ Detailed task definitions and completion reports are tracked in:
 | 006a | Provider Port and Fake Client | [task](docs/agents/tasks/current-task.md) | [report](docs/agents/reports/006a-provider-port-and-fake.md) |
 | 006b | Provider Validation Orchestration | [task](docs/agents/tasks/006b-provider-validation-orchestration.md) | [report](docs/agents/reports/006b-provider-validation-orchestration.md) |
 | 006c | Provider Validation Review Fixes | [task](docs/agents/tasks/006c-provider-validation-review-fixes.md) | [report](docs/agents/reports/006c-provider-validation-review-fixes.md) |
+| 007 | Transactional Go Live | [task](docs/agents/tasks/007-transactional-go-live.md) | [report](docs/agents/reports/007-transactional-go-live.md) |
+| 008a | Wizard UI Skeleton | [task](docs/agents/tasks/fe/002-wizard-ui-skeleton.md) | [report](docs/agents/reports/008a-wizard-ui-skeleton.md) |

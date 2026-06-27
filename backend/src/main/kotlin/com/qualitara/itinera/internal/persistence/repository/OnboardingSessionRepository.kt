@@ -66,6 +66,20 @@ class OnboardingSessionRepository(private val jdbc: NamedParameterJdbcTemplate) 
             .addValue("completedAt", completedAt))
     }
 
+    fun markLiveAndComplete(id: UUID, completedAt: OffsetDateTime) {
+        val sql = """
+            UPDATE onboarding_session
+            SET current_step = 'COMPLETE'::onboarding_step_key,
+                status       = 'LIVE'::onboarding_session_status,
+                completed_at = :completedAt,
+                updated_at   = :completedAt
+            WHERE id = :id
+        """.trimIndent()
+        jdbc.update(sql, MapSqlParameterSource()
+            .addValue("id", id)
+            .addValue("completedAt", completedAt))
+    }
+
     private fun OnboardingSessionRecord.toParams(): MapSqlParameterSource =
         MapSqlParameterSource()
             .addValue("id", id)
