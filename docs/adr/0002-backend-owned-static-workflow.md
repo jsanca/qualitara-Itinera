@@ -38,24 +38,26 @@ stateDiagram-v2
 
     VALIDATION --> REVIEW: provider valid
     VALIDATION --> REVIEW: provider partial
-    VALIDATION --> DETAILS: invalid credentials / edit credentials
-    VALIDATION --> VALIDATION: retry unavailable
+    VALIDATION --> DETAILS: invalid credentials
+    VALIDATION --> VALIDATION: retry unavailable / timeout
 
-    REVIEW --> LIVE: go live
-    REVIEW --> DETAILS: edit details
+    REVIEW --> COMPLETE: go live
+    REVIEW --> VALIDATION: edit credentials (credential change marks STALE)
 
-    LIVE --> [*]
+    COMPLETE --> [*]
 ```
 
 ## Important Rules
 
+- `DETAILS` is the initial data-entry step. After initial submission, the session moves to `VALIDATION`.
 - Submitting details more than once updates the existing details payload (idempotent).
-- If credentials change after a valid or partial validation, the previous validation result is invalidated.
-- `VALID` and `PARTIAL` Provider results allow proceeding to review.
-- `INVALID` requires credential correction before re-validation.
+- BR-001: if credentials (`accountId` or `apiKey`) change after a valid or partial validation, the previous validation result is invalidated and marked `STALE`. The session returns to `VALIDATION`, not `DETAILS` — editing credentials is an action, not a step transition back to data entry.
+- `VALID` and `PARTIAL` Provider results advance the session to `REVIEW`.
+- `INVALID` requires credential correction before re-validation; session returns to `DETAILS`.
 - `UNAVAILABLE` and `TIMEOUT` allow retry without changing step.
 - Go-live is allowed only after the latest validation result is `VALID` or `PARTIAL`.
 - Go-live is idempotent — calling it more than once must not duplicate the partner account.
+- Completed sessions (`COMPLETE`) cannot be reopened through details submission.
 
 ## Tradeoffs
 

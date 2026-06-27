@@ -120,24 +120,24 @@ stateDiagram-v2
 
     VALIDATION --> REVIEW: provider valid
     VALIDATION --> REVIEW: provider partial
-    VALIDATION --> DETAILS: invalid credentials / edit credentials
-    VALIDATION --> VALIDATION: retry unavailable
+    VALIDATION --> DETAILS: invalid credentials
+    VALIDATION --> VALIDATION: retry unavailable / timeout
 
-    REVIEW --> LIVE: go live
-    REVIEW --> DETAILS: edit details
+    REVIEW --> COMPLETE: go live
+    REVIEW --> VALIDATION: edit credentials (credential change marks STALE)
 
-    LIVE --> [*]
+    COMPLETE --> [*]
 ```
 
 ## Important Workflow Rules
 
 ### Submit Details
 
-Submitting details is idempotent.
+`DETAILS` is the initial data-entry step. Submitting details advances the session to `VALIDATION`.
 
-If details are submitted more than once, the existing details step payload is replaced.
+Submitting details is idempotent. Re-submitting with the same credentials preserves existing workflow state.
 
-If `accountId` or `apiKey` changes after a successful or partial validation, the previous validation result must no longer be trusted. The workflow returns to the validation step and requires validation again.
+BR-001: if `accountId` or `apiKey` changes after a prior validation, the previous result is invalidated. The workflow returns to `VALIDATION` with status `STALE`. Editing credentials does not return the session to `DETAILS`; it only marks validation as untrusted and requires re-validation before go-live.
 
 ### Validate Integration
 
@@ -245,6 +245,33 @@ ReviewPayload
 The service layer is responsible for validating payload shape and business rules before persisting.
 
 A future implementation could add JSON Schema validation for versioned payloads.
+
+## Workflow Domain Package
+
+The `com.qualitara.itinera.workflow` package owns all onboarding workflow rules. It does not own HTTP, SQL, Provider calls, or frontend state.
+
+Key components:
+
+```text
+AllowedActionCalculator     — pure component: step + validationStatus → Set<AllowedAction>
+OnboardingWorkflowService   — service: owns all state transitions and logs decisions
+CredentialFingerprint       — computes SHA-256 fingerprint of accountId:apiKey for BR-001
+ValidationStatus            — workflow-level status enum (adds NOT_STARTED, PENDING, STALE)
+AllowedAction               — enum of actions the frontend may offer (SUBMIT_DETAILS, etc.)
+WorkflowSessionState        — domain model: current step + validationStatus + fingerprint
+```
+
+Sub-packages:
+
+- `workflow.payload` — typed step payload DTOs (DetailsPayload, ValidationPayload, ReviewPayload, ProviderItem)
+- `workflow.model` — WorkflowSessionState
+- `workflow.exception` — InvalidWorkflowTransitionException, UnsupportedPayloadVersionException
+
+All transition methods in `OnboardingWorkflowService` are pure: they accept a state, validate preconditions, and return a new state. The caller (API layer) is responsible for loading from and persisting to the repositories.
+
+### BR-001: Credential Change Invalidates Validation
+
+When a partner resubmits details with a changed `accountId` or API key, `OnboardingWorkflowService.applyDetailsSubmission` detects the fingerprint change and sets `validationStatus = STALE`, forcing re-validation before go-live is allowed.
 
 ## Provider Integration
 
