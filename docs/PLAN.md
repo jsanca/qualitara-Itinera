@@ -25,7 +25,7 @@ Success criteria:
 * Repo structure is clear.
 * Agents understand project goals and constraints.
 
-## Phase 1 — Backend Foundation (DONE)
+## Phase 1 — Backend Foundation [DOME]
 
 Deliverables:
 
@@ -58,7 +58,7 @@ Success criteria:
 * Step payloads are stored as JSONB.
 * Unique constraints support idempotency.
 
-## Phase 3 — Workflow Domain
+## Phase 3 — Workflow Domain [DOME]
 
 Deliverables:
 
@@ -74,7 +74,7 @@ Success criteria:
 * Invalid transitions are rejected.
 * Editing credentials invalidates prior validation.
 
-## Phase 4 — Provider Validation
+## Phase 4 — Provider Validation  [DOME]
 
 Deliverables:
 

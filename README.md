@@ -69,13 +69,13 @@ stateDiagram-v2
 
     VALIDATION --> REVIEW: provider valid
     VALIDATION --> REVIEW: provider partial
-    VALIDATION --> DETAILS: invalid credentials / edit credentials
-    VALIDATION --> VALIDATION: retry unavailable
+    VALIDATION --> DETAILS: invalid credentials
+    VALIDATION --> VALIDATION: retry unavailable / timeout
 
-    REVIEW --> LIVE: go live
-    REVIEW --> DETAILS: edit details
+    REVIEW --> COMPLETE: go live
+    REVIEW --> VALIDATION: edit credentials (credential change marks STALE)
 
-    LIVE --> [*]
+    COMPLETE --> [*]
 ```
 
 ## Design Summary
@@ -123,6 +123,10 @@ The API key is never returned by the API. Session responses expose only whether 
 
 A production implementation would encrypt credentials at rest using a KMS or secrets-manager-backed strategy.
 
+## API Contract
+
+The planned backend/frontend REST contract is documented in [`docs/API_CONTRACT.md`](docs/API_CONTRACT.md). It defines the backend-owned session response, onboarding endpoints, validation states, write-only API key handling, and error format before controller implementation.
+
 ## Idempotency
 
 The implementation treats these operations as idempotent:
@@ -156,4 +160,3 @@ The implementation treats these operations as idempotent:
 See `AI_LOG.md` and `docs/agents/`.
 
 The project uses AI as an engineering assistant, not as an unchecked code generator. Tasks, reports, review feedback, accepted changes, rejected changes, and human corrections are documented there.
-
